@@ -37,6 +37,7 @@ export interface DirHandle {
   removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
   queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<Permission>;
   requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<Permission>;
+  isSameEntry?(other: DirHandle): Promise<boolean>;
 }
 
 export interface DiskEntry {

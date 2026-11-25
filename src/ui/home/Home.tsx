@@ -1,14 +1,18 @@
-import { Ellipsis, FileArchive, Plus } from 'lucide-react';
+import { Ellipsis, FileArchive, FolderOpen, GitBranch, Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { APP_NAME, APP_TAGLINE } from '@/app/brand';
+import { canPickFolder, pickFolder } from '@/app/pick-folder';
 import { detectBrowser, notify, reportError, type Services } from '@/app/services';
 import { safeFileName } from '@/app/workspace-model';
 import { exportProjectZip, importZipAsProject } from '@/core/backup/zip';
+import type { DirHandle } from '@/core/fsa/disk';
+import { FolderSync } from '@/core/fsa/sync';
 import { encodeText } from '@/core/hash';
 import type { ProjectId, ProjectMeta } from '@/core/types';
 import { TEMPLATES } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
+import { RestoreDialog } from './RestoreDialog';
 
 function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
   const [name, setName] = useState('');
@@ -80,6 +84,8 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [notice, setNotice] = useState(() => !noticeSeen());
   const [menu, setMenu] = useState<{ x: number; y: number; project: ProjectMeta } | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [opening, setOpening] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
   const now = useTick(30_000);
 
@@ -118,6 +124,30 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     props.onOpen(result.projectId);
   };
 
+  /** Opens a folder from disk as a project. The folder stays the place where its files live. */
+  const openFolder = async (): Promise<void> => {
+    const root = await pickFolder();
+    if (!root) return;
+    for (const project of await services.vault.listProjects()) {
+      if (!project.link) continue;
+      const linked = (await services.vault.loadHandle(project.id)) as unknown as DirHandle | null;
+      if (linked && (await linked.isSameEntry?.(root))) {
+        props.onOpen(project.id);
+        return;
+      }
+    }
+    const project = await services.vault.createProject({ name: root.name });
+    try {
+      const sync = await FolderSync.open(services.vault, project.id);
+      await sync.link(root);
+      await sync.dispose();
+    } catch (error) {
+      await services.vault.deleteProject(project.id).catch(() => undefined);
+      throw error;
+    }
+    props.onOpen(project.id);
+  };
+
   return (
     <div className="home">
       <div className="home-inner">
@@ -137,8 +167,26 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           <button className="btn primary" onClick={() => setCreating(true)}>
             <Plus size={15} /> New project
           </button>
+          {canPickFolder() && (
+            <button
+              className="btn"
+              disabled={opening}
+              title="Use a folder on this computer as a project. Its files stay where they are."
+              onClick={() => {
+                setOpening(true);
+                openFolder()
+                  .catch((error: unknown) => reportError(error, 'The folder could not be opened'))
+                  .finally(() => setOpening(false));
+              }}
+            >
+              <FolderOpen size={15} /> Open a folder
+            </button>
+          )}
           <button className="btn" onClick={() => zipInput.current?.click()}>
             <FileArchive size={15} /> Import a ZIP
+          </button>
+          <button className="btn" onClick={() => setRestoring(true)}>
+            <GitBranch size={15} /> Restore from GitHub
           </button>
           <input
             ref={zipInput}
@@ -199,6 +247,16 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
         </div>
       </div>
 
+      {restoring && (
+        <RestoreDialog
+          services={services}
+          onClose={() => setRestoring(false)}
+          onRestored={(id) => {
+            setRestoring(false);
+            props.onOpen(id);
+          }}
+        />
+      )}
       {creating && (
         <NewProjectDialog
           services={services}

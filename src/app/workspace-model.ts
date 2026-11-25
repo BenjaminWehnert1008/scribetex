@@ -18,6 +18,8 @@ import { Emitter, Store } from '@/core/store';
 import type { FileEntry, Path, ProjectId, ProjectMeta, VaultChange } from '@/core/types';
 import type { Vault } from '@/core/vault/vault';
 
+import { GitHubBackup } from './github-backup';
+
 export type TabKind = 'text' | 'image' | 'pdf' | 'binary';
 export type SidePanel = 'files' | 'outline' | 'history' | 'storage';
 
@@ -71,6 +73,8 @@ export class WorkspaceModel {
   readonly compile: CompileController;
   /** The link to a folder on disk; its state is 'off' when the project has none. */
   readonly folder: FolderSync;
+  /** The optional backup to a GitHub repository. */
+  readonly github: GitHubBackup;
   readonly reveal = new Emitter<Reveal>();
   /** Paths recovered from the crash journal when the project was opened. */
   readonly recovered: Path[];
@@ -93,9 +97,11 @@ export class WorkspaceModel {
     recovered: Path[],
     session: ProjectSession,
     folder: FolderSync,
+    github: GitHubBackup,
   ) {
     this.#deps = deps;
     this.folder = folder;
+    this.github = github;
     this.projectId = project.id;
     this.#lock = lock;
     this.recovered = recovered;
@@ -131,7 +137,8 @@ export class WorkspaceModel {
         await deps.snapshots.create(projectId, { reason: 'before-link', skipIfUnchanged: true });
       },
     });
-    const model = new WorkspaceModel(deps, await deps.vault.requireProject(projectId), entries, lock, recovered, session, folder);
+    const github = await GitHubBackup.open(deps.vault, projectId);
+    const model = new WorkspaceModel(deps, await deps.vault.requireProject(projectId), entries, lock, recovered, session, folder, github);
 
     if (lock.held) {
       void deps.snapshots.create(projectId, { reason: 'auto', skipIfUnchanged: true }).catch(() => undefined);
@@ -373,6 +380,7 @@ export class WorkspaceModel {
     // One last pass, so the folder has what was typed before the project closed.
     if (this.folder.linked && this.#lock.held) await this.folder.request().catch(() => undefined);
     await this.folder.dispose();
+    this.github.dispose();
     if (this.#changedSinceSnapshot && this.#lock.held) {
       await this.#deps.snapshots.create(this.projectId, { reason: 'auto', skipIfUnchanged: true }).catch(() => undefined);
     }
@@ -450,6 +458,7 @@ export class WorkspaceModel {
       this.#scheduleCompile();
     }
     if (change.origin !== 'folder') this.#scheduleFolderSync();
+    if (!this.state.get().readOnly) this.github.noteChange();
   }
 
   async #refresh(): Promise<void> {

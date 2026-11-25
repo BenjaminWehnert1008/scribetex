@@ -23,15 +23,17 @@ import type { EngineStatus } from '@/core/engine/types';
 import { outputPdfPath } from '@/core/latex/deps';
 import { explain } from '@/core/latex/log';
 import { basename, extname } from '@/core/paths';
+import type { GitHubState } from '@/app/github-backup';
 import type { FolderState } from '@/core/fsa/sync';
 import type { SaveState } from '@/core/session/session';
 import type { Diagnostic, Path, ProjectMeta } from '@/core/types';
-import { Dialog, downloadBytes, formatBytes, Menu } from '../common/ui';
+import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { CodeEditor } from '../editor/CodeEditor';
 import { useStore } from '../hooks/useStore';
 import { PdfView } from '../pdf/PdfView';
 import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
+import { GitHubCard } from './GitHubCard';
 import { HistoryPanel, OutlinePanel, StoragePanel } from './Panels';
 
 interface Layout {
@@ -90,7 +92,7 @@ function Gutter(props: { horizontal?: boolean; label: string; onDrag: (delta: nu
 }
 
 /** Says in words where the work is, as the spec asks: never just an icon. */
-function saveChip(save: SaveState, project: ProjectMeta, folder: FolderState): { dot: string; text: string; title: string } {
+function saveChip(save: SaveState, project: ProjectMeta, folder: FolderState, github: GitHubState, now: number): { dot: string; text: string; title: string } {
   if (save.status === 'failed') {
     return { dot: 'red', text: `Not saved: ${save.error ?? 'unknown problem'}`, title: 'The last change could not be saved. Download a ZIP to be safe.' };
   }
@@ -110,6 +112,17 @@ function saveChip(save: SaveState, project: ProjectMeta, folder: FolderState): {
         break;
       default:
         return { dot: '', text: `Saved to folder ${name}`, title: 'Saved in this browser and written to the linked folder on this computer.' };
+    }
+  }
+  if (github.status !== 'off' && github.settings) {
+    const where = `${github.settings.target.owner}/${github.settings.target.repo}`;
+    if (github.status === 'failed') return { dot: 'amber', text: 'GitHub backup did not work', title: `Saved in this browser. ${github.error ?? ''}` };
+    if (github.settings.lastBackupAt) {
+      return {
+        dot: github.behind ? 'amber' : '',
+        text: `Backed up to GitHub ${formatAgo(github.settings.lastBackupAt, now)}`,
+        title: `Saved in this browser and backed up to ${where}.${github.behind ? ' There are changes since that backup.' : ''}`,
+      };
     }
   }
   return {
@@ -288,6 +301,8 @@ export function Workspace(props: WorkspaceProps) {
   const compile = useStore(model.compile.state);
   const engine = useStore(services.engine.status);
   const folder = useStore(model.folder.state);
+  const github = useStore(model.github.state);
+  const now = useTick(30_000);
 
   const [layout, setLayout] = useState(loadLayout);
   const [pane, setPane] = useState<'files' | 'editor' | 'pdf'>('editor');
@@ -378,7 +393,7 @@ export function Workspace(props: WorkspaceProps) {
     };
   }, [state.project.name]);
 
-  const chip = saveChip(save, state.project, folder);
+  const chip = saveChip(save, state.project, folder, github, now);
   const texFiles = useMemo(
     () => state.entries.filter((entry) => entry.kind === 'file' && extname(entry.path) === '.tex').map((entry) => entry.path).sort(),
     [state.entries],
@@ -528,6 +543,7 @@ export function Workspace(props: WorkspaceProps) {
             {state.panel === 'storage' && (
               <StoragePanel model={model} state={state}>
                 <FolderCard model={model} state={state} />
+                <GitHubCard model={model} state={state} />
                 {props.storageExtras}
               </StoragePanel>
             )}
