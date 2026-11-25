@@ -8,7 +8,11 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // See src/core/engine/blake3-disabled.ts.
+      'blake3-wasm/browser.js': fileURLToPath(new URL('./src/core/engine/blake3-disabled.ts', import.meta.url)),
+    },
   },
   worker: { format: 'es' },
   build: {

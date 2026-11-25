@@ -1,0 +1,15 @@
+{
+  "siglum": {
+    "version": "0.2.2",
+    "releaseId": "tl2026-0cc2592f50103429",
+    "runtimeUrl": "https://github.com/SiglumProject/siglum/releases/download/v0.2.2/siglum-runtime-v0.2.2.tar.gz",
+    "sha256": "7d09309610344e7b89570aa22192505b4064bc3bc629e5a9c3a7952d919224b6",
+    "source": "https://github.com/SiglumProject/siglum",
+    "compilerSource": "https://github.com/SiglumProject/busytex"
+  },
+  "texlive": {
+    "year": 2026,
+    "treeUrl": "https://github.com/rstudio/tinytex-releases/releases/download/daily/TinyTeX.tar.gz",
+    "treeDir": ".TinyTeX"
+  }
+}

@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "engine:fetch": "node scripts/fetch-engine.mjs",
+    "engine:prepare": "node scripts/engine-prepare.mjs",
     "notices": "node scripts/gen-notices.mjs",
     "check": "npm run typecheck && npm run lint && npm run test"
   },
@@ -33,6 +33,7 @@
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@lezer/highlight": "1.2.5",
+    "@siglum/engine": "^0.2.2",
     "fflate": "0.8.3",
     "idb": "8.0.4",
     "lucide-react": "1.80.0",
