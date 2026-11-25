@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, test } from '@playwright/test';
+import { FakeGitHub } from '../src/core/github/fake-github';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const engineReady = fs.existsSync(path.join(root, 'dist/engine/runtime/runtime.json'));
@@ -132,6 +133,92 @@ test('opens a project read-only in a second tab until it is taken over', async (
   await expect(page.getByText('open for editing in another tab')).toBeVisible();
 });
 
+test('links a project to a folder and keeps both in step', async ({ page }) => {
+  // The folder dialog cannot be driven from a test, so it hands out a folder of the browser's private file system.
+  await page.addInitScript(() => {
+    (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker = async () =>
+      (await navigator.storage.getDirectory()).getDirectoryHandle('picked-folder', { create: true });
+  });
+  const onDisk = () =>
+    page.evaluate(async () => {
+      const out: Record<string, string> = {};
+      const walk = async (dir: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+        for await (const [name, handle] of (dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) {
+          if (handle.kind === 'directory') await walk(handle as FileSystemDirectoryHandle, `${prefix}${name}/`);
+          else out[`${prefix}${name}`] = await (await (handle as FileSystemFileHandle).getFile()).text();
+        }
+      };
+      await walk(await (await navigator.storage.getDirectory()).getDirectoryHandle('picked-folder'), '');
+      return out;
+    });
+
+  await start(page);
+  await createProject(page, 'Linked', 'Report');
+  await panel(page, 'Saving and backup').click();
+  await page.getByRole('button', { name: 'Link a folder…' }).click();
+  await expect(page.locator('.save-chip')).toHaveText('Saved to folder picked-folder');
+  expect(Object.keys(await onDisk()).sort()).toEqual(['chapters/conclusion.tex', 'chapters/introduction.tex', 'chapters/methods.tex', 'main.tex', 'references.bib']);
+
+  // An edit in the editor reaches the folder.
+  await typeInEditor(page, '% written in the editor');
+  await expect.poll(async () => (await onDisk())['main.tex']).toContain('% written in the editor');
+
+  // A change made in the folder reaches the project.
+  await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked-folder');
+    const dir = await (await root.getDirectoryHandle('chapters')).getDirectoryHandle('extra', { create: true });
+    const writable = await (await dir.getFileHandle('from-disk.tex', { create: true })).createWritable();
+    await writable.write('made outside the editor');
+    await writable.close();
+  });
+  await page.getByRole('button', { name: 'Compare now' }).click();
+  await panel(page, 'Files').click();
+  await row(page, 'extra').click();
+  await row(page, 'from-disk.tex').click();
+  await expect(page.locator('.cm-content')).toContainText('made outside the editor');
+
+  // After a reload the link is still there.
+  await page.reload();
+  await expect(page.locator('.save-chip')).toHaveText('Saved to folder picked-folder');
+});
+
+test('backs a project up to GitHub and restores it from there', async ({ page }) => {
+  const github = new FakeGitHub();
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+  await page.route('https://api.github.com/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const response = await github.fetch(request.url(), {
+      method: request.method(),
+      headers: { Authorization: request.headers()['authorization'] ?? '' },
+      body: request.postData() ?? undefined,
+    });
+    return route.fulfill({ status: response.status, headers: cors, json: await response.json() });
+  });
+
+  await start(page);
+  await createProject(page, 'Backed up', 'Article');
+  await panel(page, 'Saving and backup').click();
+  await page.getByRole('button', { name: 'Set up…' }).click();
+  await page.getByRole('textbox', { name: 'Repository', exact: true }).fill('me/backups');
+  await page.getByLabel('Token', { exact: true }).fill('wrong-token');
+  await page.getByRole('button', { name: 'Connect and back up' }).click();
+  await expect(page.getByRole('alert')).toContainText('did not accept the token');
+  await page.getByLabel('Token', { exact: true }).fill('good-token');
+  await page.getByRole('button', { name: 'Connect and back up' }).click();
+  await expect(page.locator('.save-chip')).toContainText('Backed up to GitHub');
+  expect(Object.keys(github.files())).toEqual(['Backed up/main.tex', 'Backed up/references.bib', 'README.md']);
+
+  await page.getByRole('button', { name: 'All projects' }).click();
+  await page.getByRole('button', { name: 'Restore from GitHub' }).click();
+  await page.getByRole('textbox', { name: 'Repository', exact: true }).fill('me/backups');
+  await page.getByRole('button', { name: 'Show the backups' }).click();
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(page.locator('.topbar .title')).toHaveText('Backed up');
+  await expect(row(page, 'references.bib')).toBeVisible();
+  await expect(page.locator('.save-chip')).toContainText('Backed up to GitHub');
+});
+
 test.describe('with the LaTeX engine', () => {
   test.skip(!engineReady, 'run "npm run engine:prepare" and build first');
   test.setTimeout(300_000);
@@ -152,9 +239,29 @@ test.describe('with the LaTeX engine', () => {
     await page.locator('.cm-content').click();
     await page.keyboard.press('ControlOrMeta+Home');
     await page.keyboard.type('\\undefinedcommandhere\n');
-    await expect(page.locator('.statusbar')).toContainText(/[1-9]\d* errors?,/, { timeout: 120_000 });
+    // One mistake is one error: the line that says the run ended is not counted.
+    await expect(page.locator('.statusbar')).toContainText('1 error,', { timeout: 120_000 });
     await expect(page.getByText('Showing the last version that compiled')).toBeVisible();
     await page.locator('.statusbar button').first().click();
     await expect(page.locator('.problem').first()).toContainText('main.tex:1');
+  });
+
+  test('loads fonts and language files that a document needs without naming them', async ({ page }) => {
+    await start(page);
+    await createProject(page, 'Fonts', 'Article');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await row(page, 'main.tex').click();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    // T1 encoding without a font package needs the cm-super fonts, and babel
+    // needs french.ldf. TeX names neither file when it is missing.
+    await page.keyboard.insertText(
+      ['\\documentclass{article}', '\\usepackage[T1]{fontenc}', '\\usepackage[french]{babel}', '\\begin{document}', 'Voici un \\textbf{texte} en \\textit{italique}.', '\\end{document}', ''].join('\n'),
+    );
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await expect(page.locator('.statusbar')).toContainText(/0 errors, [1-9]\d* warnings?/, { timeout: 240_000 });
+    await page.locator('.statusbar button').first().click();
+    await expect(page.locator('.problem').first()).toContainText('French');
+    await expect(page.locator('.pdf-bar')).toContainText('1 page');
   });
 });

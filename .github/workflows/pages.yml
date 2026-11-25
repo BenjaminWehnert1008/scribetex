@@ -1,0 +1,121 @@
+name: Test, build and deploy
+
+# Every push and pull request is checked and built. Pushes to main are also
+# published to GitHub Pages. The repository needs "Settings > Pages > Source"
+# set to "GitHub Actions" once.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check, lint and unit tests
+        run: npm run check
+
+      # The engine folder takes a few minutes to assemble and only changes when
+      # one of these files does, so it is kept between runs.
+      - name: Restore the compile engine
+        id: engine
+        uses: actions/cache/restore@v6
+        with:
+          path: public/engine
+          key: engine-v1-${{ hashFiles('engine/**', 'scripts/engine-prepare.mjs') }}
+
+      - name: Get a TeX Live tree to take the LaTeX packages from
+        id: texlive
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: |
+          url=$(jq -r .texlive.treeUrl engine/engine.lock.json)
+          dir=$(jq -r .texlive.treeDir engine/engine.lock.json)
+          curl -fL --retry 4 --retry-delay 5 -o "$RUNNER_TEMP/texlive.tar.gz" "$url"
+          tar -xzf "$RUNNER_TEMP/texlive.tar.gz" -C "$RUNNER_TEMP"
+          tlmgr=$(ls "$RUNNER_TEMP/$dir"/bin/*/tlmgr | head -n 1)
+          export PATH="$(dirname "$tlmgr"):$PATH"
+          extras=$(grep -vE '^[[:space:]]*(#|$)' engine/extra-packages.txt | tr '\n' ' ')
+          # A mirror that is down or one unknown name must not stop the deploy:
+          # the base tree alone already gives a working editor.
+          complete=true
+          if ! tlmgr install $extras; then
+            echo "::warning::tlmgr could not install the extra packages in one go. Trying them one at a time."
+            for name in $extras; do
+              if ! tlmgr install "$name"; then
+                complete=false
+                echo "::warning::The LaTeX package \"$name\" could not be installed and is left out of this build."
+              fi
+            done
+          fi
+          echo "complete=$complete" >> "$GITHUB_OUTPUT"
+          echo "TEXLIVE_ROOT=$RUNNER_TEMP/$dir" >> "$GITHUB_ENV"
+
+      - name: Assemble the compile engine
+        run: npm run engine:prepare
+
+      # An engine folder that misses packages is not kept, so the next run tries again.
+      - name: Keep the compile engine for the next run
+        if: steps.engine.outputs.cache-hit != 'true' && steps.texlive.outputs.complete == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: public/engine
+          key: ${{ steps.engine.outputs.cache-primary-key }}
+
+      - name: Build the site
+        run: npm run build
+
+      - name: Browser tests against the built site
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test --trace off
+        env:
+          E2E_SKIP_BUILD: '1'
+
+      - name: Keep the test report when a browser test fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-results
+          path: test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - uses: actions/configure-pages@v6
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

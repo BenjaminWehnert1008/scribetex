@@ -1,6 +1,8 @@
 node_modules
 dist
 public/engine
+public/licenses/THIRD-PARTY-NOTICES.txt
+.cache
 playwright-report
 test-results
 coverage

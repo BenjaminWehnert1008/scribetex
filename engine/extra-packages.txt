@@ -1,0 +1,136 @@
+# LaTeX packages added to the TeX Live tree before the package folder is built,
+# on top of what the base tree (see engine.lock.json) already contains.
+# One TeX Live package name per line, as "tlmgr install" takes it.
+#
+# The deploy workflow reads this file. A name that tlmgr does not know is
+# reported as a warning in the workflow run and left out; the deploy goes on.
+# Every package makes the site larger, fonts most of all, and GitHub Pages
+# allows 1 GB in total. Nothing here is downloaded by a visitor until a
+# document asks for it.
+#
+# Not possible in a browser, whatever is listed here: packages that run other
+# programs (minted, svg, gnuplottex) and biber. biblatex works with
+# \usepackage[backend=bibtex]{biblatex}.
+
+# Languages
+babel-german
+babel-dutch
+babel-spanish
+babel-italian
+babel-portuges
+
+# Document classes and their needs
+ieeetran
+elsarticle
+llncs
+acmart
+cmap
+ncctools
+moderncv
+academicons
+exam
+a0poster
+beamerposter
+type1cm
+beamertheme-metropolis
+pgfopts
+
+# Front matter, structure, lists of things
+titling
+abstract
+tocloft
+tocbibind
+minitoc
+epigraph
+nextpage
+emptypage
+fncychap
+hanging
+imakeidx
+nomencl
+glossaries
+mfirstuc
+xfor
+datatool
+tracklang
+acronym
+bigfoot
+datetime2
+
+# Mathematics and science
+cancel
+physics
+braket
+upgreek
+was
+esint
+mathdots
+mleftright
+doublestroke
+bbm
+bbold
+wasysym
+wasy
+bussproofs
+chemfig
+simplekv
+
+# Tables and figures
+tabulary
+ltablex
+tabularray
+ninecolors
+nicematrix
+diagbox
+arydshln
+rotating
+pict2e
+fancybox
+csvsimple
+
+# Drawing
+pgfplots
+circuitikz
+tikz-cd
+forest
+elocalloc
+inlinedef
+pgfgantt
+
+# Code and algorithms
+listingsutf8
+algorithm2e
+ifoddpage
+relsize
+
+# Notes, comments, placeholder text
+todonotes
+changes
+truncate
+enotez
+translations
+blindtext
+kantlipsum
+mwe
+
+# Splitting a document over files
+import
+subfiles
+
+# Bibliography styles
+biblatex-apa
+biblatex-ieee
+
+# Links and identifiers
+xurl
+orcidlink
+
+# Fonts
+sourcesanspro
+sourcecodepro
+sourceserifpro
+opensans
+lato
+fira
+ebgaramond
+dejavu
