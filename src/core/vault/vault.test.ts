@@ -185,7 +185,16 @@ describe('bulk writes', () => {
 });
 
 describe('mirror queue', () => {
+  const link = { folderName: 'Thesis', linkedAt: 0, lastSyncAt: null, writePdf: false };
+
+  it('stays empty for a project that is not linked to a folder', async () => {
+    await vault.writeText(projectId, 'a.tex', 'x');
+    await vault.remove(projectId, 'a.tex');
+    expect(await vault.countPendingMirror(projectId)).toBe(0);
+  });
+
   it('queues every change for the linked folder, in order', async () => {
+    await vault.updateProject(projectId, { link });
     await vault.writeText(projectId, 'chapters/intro.tex', 'a');
     await vault.move(projectId, 'chapters/intro.tex', 'chapters/einleitung.tex');
     await vault.remove(projectId, 'chapters');
@@ -199,12 +208,14 @@ describe('mirror queue', () => {
   });
 
   it('skips the queue for changes that came from disk', async () => {
+    await vault.updateProject(projectId, { link });
     await vault.writeText(projectId, 'a.tex', 'from disk', { origin: 'folder', skipMirror: true });
     expect(await vault.countPendingMirror(projectId)).toBe(0);
     expect(seen.at(-1)).toMatchObject({ type: 'write', origin: 'folder' });
   });
 
   it('tracks attempts and can be cleared', async () => {
+    await vault.updateProject(projectId, { link });
     await vault.writeText(projectId, 'a.tex', 'x');
     const [item] = await vault.pendingMirror(projectId);
     await vault.markMirrorFailed(item!.seq!, 'permission denied');
@@ -214,6 +225,7 @@ describe('mirror queue', () => {
   });
 
   it('queues the whole project when a folder is linked, parents before children', async () => {
+    await vault.updateProject(projectId, { link });
     await vault.writeText(projectId, 'chapters/sub/deep.tex', 'x');
     await vault.clearMirrorQueue(projectId);
     const count = await vault.queueFullMirror(projectId);

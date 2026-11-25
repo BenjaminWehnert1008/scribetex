@@ -621,6 +621,9 @@ export class Vault {
     options: WriteOptions,
   ): Promise<void> {
     if (options.skipMirror) return;
+    // Only a project that is linked to a folder has anything waiting for it.
+    const project = await tx.objectStore('projects').get(item.projectId);
+    if (!project?.link) return;
     await tx.objectStore('outbox').add(item);
   }
 }

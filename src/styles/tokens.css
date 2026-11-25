@@ -1,0 +1,106 @@
+/* Design tokens. "Paper and ink": warm paper tones, one green-teal accent. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+:root {
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --paper: #fbf9f4;
+  --paper-raised: #ffffff;
+  --paper-sunk: #f3efe6;
+  --paper-hover: #ebe6da;
+  --line: #ddd6c6;
+  --line-strong: #c4bba7;
+  --ink: #23211c;
+  --ink-soft: #5b564b;
+  --ink-faint: #8a8475;
+  --accent: #17715b;
+  --accent-hover: #115a48;
+  --accent-soft: #dcefe8;
+  --on-accent: #ffffff;
+  --danger: #b3261e;
+  --danger-soft: #fbe5e2;
+  --warn: #9a6200;
+  --warn-soft: #fbefd3;
+  --info: #2c5f9e;
+  --pdf-backdrop: #e7e2d6;
+  --shadow: 0 1px 2px rgb(35 33 28 / 8%), 0 4px 16px rgb(35 33 28 / 10%);
+
+  --syn-command: #17715b;
+  --syn-keyword: #7a3e9d;
+  --syn-comment: #8a8475;
+  --syn-math: #a14b00;
+  --syn-bracket: #5b564b;
+  --syn-string: #2c5f9e;
+
+  --radius: 6px;
+  --bar-height: 44px;
+  --status-height: 26px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #1b1a17;
+    --paper-raised: #24231f;
+    --paper-sunk: #151412;
+    --paper-hover: #2e2c27;
+    --line: #36342e;
+    --line-strong: #4a473f;
+    --ink: #ece8dd;
+    --ink-soft: #b5b0a2;
+    --ink-faint: #827d70;
+    --accent: #4cc2a0;
+    --accent-hover: #6fd3b5;
+    --accent-soft: #1d3a32;
+    --on-accent: #0f1f1a;
+    --danger: #f2877f;
+    --danger-soft: #45201d;
+    --warn: #e6b450;
+    --warn-soft: #3d3016;
+    --info: #8ab4f0;
+    --pdf-backdrop: #121110;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 45%);
+    --syn-command: #4cc2a0;
+    --syn-keyword: #c89be0;
+    --syn-comment: #827d70;
+    --syn-math: #e6a25a;
+    --syn-bracket: #b5b0a2;
+    --syn-string: #8ab4f0;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --paper: #1b1a17;
+  --paper-raised: #24231f;
+  --paper-sunk: #151412;
+  --paper-hover: #2e2c27;
+  --line: #36342e;
+  --line-strong: #4a473f;
+  --ink: #ece8dd;
+  --ink-soft: #b5b0a2;
+  --ink-faint: #827d70;
+  --accent: #4cc2a0;
+  --accent-hover: #6fd3b5;
+  --accent-soft: #1d3a32;
+  --on-accent: #0f1f1a;
+  --danger: #f2877f;
+  --danger-soft: #45201d;
+  --warn: #e6b450;
+  --warn-soft: #3d3016;
+  --info: #8ab4f0;
+  --pdf-backdrop: #121110;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 45%);
+  --syn-command: #4cc2a0;
+  --syn-keyword: #c89be0;
+  --syn-comment: #827d70;
+  --syn-math: #e6a25a;
+  --syn-bracket: #b5b0a2;
+  --syn-string: #8ab4f0;
+  color-scheme: dark;
+}
