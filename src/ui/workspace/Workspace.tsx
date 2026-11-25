@@ -35,6 +35,7 @@ import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
 import { GitHubCard } from './GitHubCard';
 import { HistoryPanel, OutlinePanel, StoragePanel } from './Panels';
+import { APP_NAME } from '@/app/brand';
 
 interface Layout {
   side: number;
@@ -387,9 +388,9 @@ export function Workspace(props: WorkspaceProps) {
   }, [model]);
 
   useEffect(() => {
-    document.title = `${state.project.name} · LaTeX editor`;
+    document.title = `${state.project.name} · ${APP_NAME}`;
     return () => {
-      document.title = 'LaTeX editor';
+      document.title = `${APP_NAME} · LaTeX editor`;
     };
   }, [state.project.name]);
 

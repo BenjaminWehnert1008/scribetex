@@ -1,11 +1,12 @@
-# Galley
+# Parbox
 
 A LaTeX editor that runs entirely in the browser: a file tree with real
 folders, an editor, and a PDF preview, compiled on your own computer by a
 WebAssembly build of TeX Live. There is no server and no account. The site is
 plain static files and is published with GitHub Pages.
 
-"Galley" is a working name. It is set in one place, `src/app/brand.ts`.
+The name is LaTeX's command for a box of text, `\parbox`. It is set in
+`src/app/brand.ts` and in the title of `index.html`.
 
 ## What it does
 
