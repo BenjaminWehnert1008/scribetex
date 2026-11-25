@@ -105,6 +105,32 @@ describe('parseLog: errors', () => {
   });
 });
 
+describe('parseLog: what is not a problem of its own', () => {
+  it('does not count the closing line of a failed run as a second error', () => {
+    const log = [
+      '(/main.tex',
+      '/main.tex:1: Undefined control sequence.',
+      'l.1 \\undefinedcommandhere',
+      '',
+      '/main.tex:1:  ==> Fatal error occurred, no output PDF file produced!',
+    ].join('\n');
+    const summary = parseLog(log, { knownPaths: ['main.tex'] });
+    expect(summary.errorCount).toBe(1);
+    expect(summary.diagnostics[0]).toMatchObject({ severity: 'error', file: 'main.tex', line: 1, message: 'Undefined control sequence.' });
+  });
+
+  it('keeps that closing line when it is the only thing the log says', () => {
+    const summary = parseLog('!  ==> Fatal error occurred, no output PDF file produced!\n');
+    expect(summary.errorCount).toBe(1);
+  });
+
+  it('files a warning nobody can act on in a browser as a note', () => {
+    const summary = parseLog('(/main.tex\nPackage epstopdf Warning: Shell escape feature is not enabled.\n)');
+    expect(summary.warningCount).toBe(0);
+    expect(summary.diagnostics[0]?.severity).toBe('info');
+  });
+});
+
 describe('parseLog: warnings and info', () => {
   it('extracts references, citations and the input line', () => {
     const log = [
@@ -129,6 +155,44 @@ describe('parseLog: warnings and info', () => {
     expect(result.diagnostics[2]!.message).toContain('Package hyperref');
     expect(result.diagnostics[2]!.message).toContain('removing');
     expect(result.diagnostics[2]!.line).toBe(30);
+  });
+
+  it('joins the lines a package continues its message on', () => {
+    const log = [
+      '(./main.tex',
+      'Package biblatex Warning: Using fall-back bibtex backend:',
+      '(biblatex)                functionality may be reduced/unavailable.',
+      '',
+      'Package hyperref Warning: Token not allowed in a PDF string (Unicode):',
+      "(hyperref)                removing `math shift' on input line 14.",
+      '',
+      ')',
+    ].join('\n');
+    const { diagnostics } = parseLog(log, { knownPaths: ['main.tex'] });
+    expect(diagnostics.map((d) => d.message)).toEqual([
+      'Package biblatex: Using fall-back bibtex backend: functionality may be reduced/unavailable.',
+      "Package hyperref: Token not allowed in a PDF string (Unicode): removing `math shift' on input line 14.",
+    ]);
+    expect(diagnostics[1]).toMatchObject({ file: 'main.tex', line: 14 });
+  });
+
+  it('does not take a line number inside a package for a line of the project', () => {
+    const log = [
+      '(./main.tex',
+      '(/texlive/texmf-dist/tex/generic/babel-french/french.ldf',
+      "Package babel Warning: No hyphenation patterns were preloaded for the language 'French' on input line 87.",
+      '',
+      '/texlive/texmf-dist/tex/generic/babel-french/french.ldf:120: Undefined control sequence.',
+      ')',
+      "LaTeX Warning: Reference `fig:x' on page 1 undefined on input line 9.",
+      ')',
+    ].join('\n');
+    const { diagnostics } = parseLog(log, { knownPaths: ['main.tex'], wrapWidth: 0 });
+    expect(diagnostics.map((d) => [d.file, d.line])).toEqual([
+      ['main.tex', null],
+      ['main.tex', null],
+      ['main.tex', 9],
+    ]);
   });
 
   it('keeps bad boxes out unless asked for', () => {

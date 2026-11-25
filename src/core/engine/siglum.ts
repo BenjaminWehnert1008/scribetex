@@ -8,7 +8,8 @@
 import { decodeText } from '../hash';
 import { Store } from '../store';
 import type { TexEngine } from '../types';
-import { isMissingBitmapFont, needsCmSuper } from './fonts';
+import { dropFontMapNoise, isMissingBitmapFont, needsCmSuper } from './fonts';
+import { indirectFiles } from './indirect';
 import type { CompileOutput, CompileRequest, EngineClient, EngineLocation, EngineStatus } from './types';
 
 /** The part of the Siglum compiler this adapter uses. */
@@ -19,6 +20,12 @@ interface SiglumLike {
     options: { engine?: string; useCache?: boolean; mainFile?: string; additionalFiles?: Record<string, string | Uint8Array> },
   ): Promise<{ success: boolean; pdf?: Uint8Array; error?: string; log?: string; syncTexData?: string | null }>;
   preloadBundles(names: string[]): Promise<{ loaded: string[]; failed: string[] }>;
+  /** Bundles the engine mounts for every compile, on top of the ones it picks from the source. */
+  eagerBundles?: string[] | Record<string, string[]>;
+  ctanFetcher?: {
+    lookupPackageForFile(name: string): Promise<string | null>;
+    batchFetchPackages(names: string[]): Promise<unknown>;
+  };
   terminate(): void;
   unload(): void;
   bundleManager?: { bytesDownloaded?: number };
@@ -44,6 +51,7 @@ export class SiglumEngine implements EngineClient {
   #queue: Promise<unknown> = Promise.resolve();
   #cancelCurrent: (() => void) | null = null;
   #cmSuperLoaded = false;
+  readonly #lookedUp = new Set<string>();
   #disposed = false;
 
   constructor(options: SiglumEngineOptions) {
@@ -152,6 +160,9 @@ export class SiglumEngine implements EngineClient {
         compiler.compile(source, { engine: request.engine, useCache: false, mainFile: request.mainFile, additionalFiles });
 
       if (!this.#cmSuperLoaded && needsCmSuper(source)) await this.#loadCmSuper(compiler);
+      const sources = [source];
+      for (const file of request.files) if (file.path !== request.mainFile && /\.(tex|ltx|sty|cls)$/i.test(file.path)) sources.push(decodeText(file.bytes));
+      await this.#fetchIndirect(compiler, sources);
 
       this.#status.patch({ phase: 'compiling', detail: 'Compiling' });
       let result = await Promise.race([compileOnce(), cancelled]);
@@ -174,7 +185,7 @@ export class SiglumEngine implements EngineClient {
       return finish({
         ok: result.success,
         pdf: result.success && result.pdf ? result.pdf : null,
-        log: result.log ?? '',
+        log: dropFontMapNoise(result.log ?? ''),
         error: result.success ? null : (result.error ?? 'The compile failed.'),
         synctex: result.syncTexData ?? null,
       });
@@ -186,10 +197,33 @@ export class SiglumEngine implements EngineClient {
     }
   }
 
+  /** Fetches the packages of files the document needs without naming them, see `indirectFiles`. */
+  async #fetchIndirect(compiler: SiglumLike, sources: string[]): Promise<void> {
+    const fetcher = compiler.ctanFetcher;
+    if (!fetcher) return;
+    const packages = new Set<string>();
+    for (const text of sources) {
+      for (const file of indirectFiles(text)) {
+        // Asked once per session: a name that leads nowhere stays that way.
+        if (this.#lookedUp.has(file)) continue;
+        this.#lookedUp.add(file);
+        const name = await fetcher.lookupPackageForFile(file).catch(() => null);
+        if (name) packages.add(name);
+      }
+    }
+    if (packages.size === 0) return;
+    this.#status.patch({ phase: 'loading', detail: `Loading ${[...packages].sort().join(', ')}` });
+    // A package that this site does not have is not an error here: TeX reports what is missing.
+    await fetcher.batchFetchPackages([...packages]).catch(() => undefined);
+  }
+
   async #loadCmSuper(compiler: SiglumLike): Promise<void> {
     this.#status.patch({ phase: 'loading', detail: 'Loading T1 fonts (about 60 MB, once)' });
     const outcome = await compiler.preloadBundles(['cm-super']);
     this.#cmSuperLoaded = outcome.loaded.includes('cm-super');
+    // Downloading is not enough: the engine only mounts the bundle, and adds
+    // its fonts to the font map, when it is told to use it for the compile.
+    if (this.#cmSuperLoaded) compiler.eagerBundles = ['cm-super'];
   }
 }
 

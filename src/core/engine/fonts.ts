@@ -38,3 +38,34 @@ export function needsCmSuper(preamble: string): boolean {
 export function isMissingBitmapFont(text: string): boolean {
   return /Font (?:ec|tc|la|lb|lc|rx)[a-z]{2,4}\d{3,4} at \d+ not found/.test(text);
 }
+
+/**
+ * Removes pdfTeX's warnings about its own font map from a log ("fontmap entry
+ * for ... already exists, duplicates ignored" and the like). The engine's map
+ * lists every font several times, so each compile prints a few thousand of
+ * them, close to a megabyte that says nothing about the document. Everything
+ * else is kept as it is.
+ */
+export function dropFontMapNoise(log: string, wrapWidth = 79): string {
+  if (!log.includes('pdfTeX warning:')) return log;
+  const lines = log.split('\n');
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i]!.startsWith('pdfTeX warning:')) {
+      kept.push(lines[i]!);
+      continue;
+    }
+    // TeX breaks a long line after exactly `wrapWidth` characters, so the
+    // warning goes on for as long as the lines are that long.
+    let end = i;
+    while (lines[end]!.length === wrapWidth && end + 1 < lines.length && end - i < 8) end++;
+    const whole = lines.slice(i, end + 1).join('');
+    if (!/^pdfTeX warning: \S+ \(file \S*\/updmap\/pdftex\.map\): /.test(whole)) {
+      kept.push(lines[i]!);
+      continue;
+    }
+    i = end;
+    while (i + 1 < lines.length && lines[i + 1]!.trim() === '') i++;
+  }
+  return kept.join('\n');
+}

@@ -129,6 +129,14 @@ const BAD_BOX = /^(Overfull|Underfull)\s+\\([hv])box\s*\(([^)]*)\)\s*(?:in parag
 const MISSING_FILE = /(?:File|Font|Package)\s*[`'"]([^'"]+)['"]?\s*not found/i;
 const OUTPUT_PAGES = /Output written on\s+\S+\s+\((\d+)\s+pages?/;
 const NO_PAGES = /^No pages of output/;
+const RUN_ENDED = /Fatal error occurred, no output/i;
+// Warnings about something a browser can never offer. Nobody can act on them, so they are kept as notes.
+const NOT_ACTIONABLE = /Shell escape feature is not enabled/i;
+
+/** Marks a file on the stack that is not part of the project: a package, a class, a font definition. */
+const OTHER_FILE = Symbol('other file');
+/** A project file, a file from outside the project, or null for parentheses that open no file. */
+type StackEntry = Path | typeof OTHER_FILE | null;
 
 /** Parses a TeX log into diagnostics, newest state of the file stack respected. */
 export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary {
@@ -136,12 +144,22 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
   const resolver = new PathResolver(options.knownPaths ?? [], options.workDir ?? '');
   const diagnostics: Diagnostic[] = [];
   const missingFiles: string[] = [];
-  const stack: (Path | null)[] = [];
+  const stack: StackEntry[] = [];
   let pages: number | null = null;
 
-  const currentFile = (): Path | null => {
-    for (let i = stack.length - 1; i >= 0; i--) if (stack[i]) return stack[i]!;
-    return null;
+  // Where TeX is reading right now: the project file a message belongs to,
+  // and whether the line numbers TeX prints are lines of that file. They are
+  // not while TeX reads a file of a package: "on input line 87" then means
+  // line 87 of the package, and the message is filed under the project file
+  // that loaded it, without a line.
+  const whereNow = (): { file: Path | null; ownLines: boolean } => {
+    let ownLines = true;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const entry = stack[i]!;
+      if (entry === OTHER_FILE) ownLines = false;
+      else if (entry !== null) return { file: entry, ownLines };
+    }
+    return { file: null, ownLines };
   };
 
   const push = (
@@ -164,7 +182,9 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
     // The file a diagnostic belongs to is the one open when the line started:
     // TeX prints ")" after the content of a file, and messages contain plenty
     // of their own parentheses, so the stack is updated after interpreting.
-    const fileHere = currentFile();
+    const here = whereNow();
+    const fileHere = here.file;
+    const lineHere = (lineNo: number | null): number | null => (here.ownLines ? lineNo : null);
     trackParens(line, stack, resolver);
 
     const pageMatch = OUTPUT_PAGES.exec(line);
@@ -180,7 +200,9 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
     if (fileLine && !/^(Package|Class|LaTeX|Module)\b/.test(line)) {
       const [, file, lineNo, rest] = fileLine;
       const severity: DiagnosticSeverity = /^\s*(LaTeX |Package |Class )?Warning/i.test(rest!) ? 'warning' : 'error';
-      push(severity, stripMarker(rest!) || 'TeX error', resolver.resolve(file!), Number(lineNo), line, lookAheadContext(lines, i));
+      const named = resolver.resolve(file!);
+      // An error inside a package's file is shown at the project file that loaded the package.
+      push(severity, stripMarker(rest!) || 'TeX error', named ?? fileHere, named ? Number(lineNo) : null, line, lookAheadContext(lines, i));
       continue;
     }
 
@@ -205,7 +227,7 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
           message += ` ${follow.trim()}`;
         }
       }
-      push('error', message, fileHere, lineNo, raw, context);
+      push('error', message, fileHere, lineHere(lineNo), raw, context);
       continue;
     }
 
@@ -217,6 +239,13 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
       // LaTeX wraps a warning body onto following indented lines.
       for (let j = i + 1; j < lines.length; j++) {
         const follow = lines[j]!;
+        // A package continues its message on lines that start with "(name)".
+        const marker = pkg ? `(${pkg})` : null;
+        if (marker && follow.startsWith(marker) && /^\s+\S/.test(follow.slice(marker.length))) {
+          message += ` ${follow.slice(marker.length).trim()}`;
+          i = j;
+          continue;
+        }
         if (!/^\s{2,}\S/.test(follow) || /^\s*\(/.test(follow)) break;
         message += ` ${follow.trim()}`;
         i = j;
@@ -224,10 +253,10 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
       const lineMatch = ON_INPUT_LINE.exec(message);
       const label = source ? `${source}${pkg ? ` ${pkg}` : ''}: ` : '';
       push(
-        kind === 'Warning' ? 'warning' : 'info',
+        kind === 'Warning' && !NOT_ACTIONABLE.test(message) ? 'warning' : 'info',
         label + message,
         fileHere,
-        lineMatch ? Number(lineMatch[1]) : null,
+        lineHere(lineMatch ? Number(lineMatch[1]) : null),
         line,
       );
       continue;
@@ -237,8 +266,14 @@ export function parseLog(log: string, options: ParseLogOptions = {}): LogSummary
     const badBox = BAD_BOX.exec(line);
     if (badBox && options.includeBadBoxes) {
       const [, kind, box, detail, from] = badBox;
-      push('info', `${kind} \\${box}box (${detail})`, fileHere, Number(from), line);
+      push('info', `${kind} \\${box}box (${detail})`, fileHere, lineHere(Number(from)), line);
     }
+  }
+
+  // pdfTeX ends a failed run with "==> Fatal error occurred, no output PDF
+  // file produced!". Next to a real error that line is not a second problem.
+  if (diagnostics.some((d) => d.severity === 'error' && !RUN_ENDED.test(d.message))) {
+    for (let i = diagnostics.length - 1; i >= 0; i--) if (RUN_ENDED.test(diagnostics[i]!.message)) diagnostics.splice(i, 1);
   }
 
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
@@ -262,13 +297,13 @@ function stripMarker(text: string): string {
  * the ")" of something like "(12.34pt too wide)" closes that level instead of
  * wrongly closing the file TeX is reading.
  */
-function trackParens(line: string, stack: (Path | null)[], resolver: PathResolver): void {
+function trackParens(line: string, stack: StackEntry[], resolver: PathResolver): void {
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '(') {
       const match = FILE_OPEN_AT.exec(line.slice(i));
       if (match) {
-        stack.push(resolver.resolve(match[1]!));
+        stack.push(resolver.resolve(match[1]!) ?? OTHER_FILE);
         i += match[0].length - 1;
       } else {
         stack.push(null);
@@ -321,6 +356,11 @@ export function explain(diagnostic: Diagnostic): { headline: string; hint: strin
       test: /Runaway argument|File ended while scanning/i,
       headline: () => 'Something was never closed',
       hint: 'An environment, group or argument was opened and not closed before the file ended.',
+    },
+    {
+      test: /Package babel Error: Unknown option '([^']+)'/i,
+      headline: (m) => `Language not available: ${m[1]}`,
+      hint: 'babel has no files for this language here. Check the spelling. If it is right, the language is not among the LaTeX packages of this site.',
     },
     {
       test: /Environment ([\w*-]+) undefined/i,
