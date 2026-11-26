@@ -1,24 +1,28 @@
 import { X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { dismissToast, toasts } from '@/app/services';
 import { useStore } from '../hooks/useStore';
 
 export function Dialog(props: { title: string; onClose?: () => void; children: ReactNode; wide?: boolean; labelledBy?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const { onClose } = props;
+  const onEscape = useEffectEvent(() => onClose?.());
+  // The focus moves into the dialog once, when it opens, and back when it closes. It must not move
+  // again while the dialog is open: callers pass a new onClose with every render, and a dialog that
+  // went back to its first field each time would put what someone is typing into the wrong field.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const focusable = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button');
     focusable?.focus();
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && onClose) onClose();
+      if (event.key === 'Escape') onEscape();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       previous?.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div
       className="backdrop"
