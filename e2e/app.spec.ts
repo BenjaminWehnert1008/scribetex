@@ -336,4 +336,29 @@ test.describe('with the LaTeX engine', () => {
     await expect(page.locator('.problem').first()).toContainText('French');
     await expect(page.locator('.pdf-bar')).toContainText('1 page');
   });
+
+  test('fetches the Times, Helvetica and Courier fonts when a document uses them', async ({ page }) => {
+    await start(page);
+    await createProject(page, 'Times', 'Blank');
+    await row(page, 'main.tex').click();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    // TeX only names the missing metric file (ptmr8t), never the package that has it.
+    await page.keyboard.insertText(
+      [
+        '\\documentclass{article}',
+        '\\usepackage[T1]{fontenc}',
+        '\\usepackage{mathptmx}',
+        '\\usepackage[scaled]{helvet}',
+        '\\usepackage{courier}',
+        '\\begin{document}',
+        'Times, \\textsf{Helvetica} and \\texttt{Courier}.',
+        '\\end{document}',
+        '',
+      ].join('\n'),
+    );
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await expect(page.locator('.statusbar')).toContainText('No problems', { timeout: 240_000 });
+    await expect(page.locator('.pdf-bar')).toContainText('1 page');
+  });
 });
