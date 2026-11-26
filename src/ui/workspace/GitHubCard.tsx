@@ -1,5 +1,5 @@
 import { GitBranch } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { notify, reportError } from '@/app/services';
 import { safeFileName, type WorkspaceModel, type WorkspaceState } from '@/app/workspace-model';
 import { Dialog, formatAgo, useTick } from '../common/ui';
@@ -109,6 +109,27 @@ export function GitHubCard(props: { model: WorkspaceModel; state: WorkspaceState
   const [disconnecting, setDisconnecting] = useState(false);
   const [forgetToken, setForgetToken] = useState(false);
   const settings = github.settings;
+  const connected = github.status !== 'off';
+
+  // A repository can be made private (or public) on GitHub at any time, so
+  // ask again while this card is shown: now, every minute, and when the
+  // person comes back to this tab, most likely from GitHub's settings.
+  useEffect(() => {
+    if (!connected) return;
+    const check = (): void => void model.github.checkRepository();
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') check();
+    };
+    check();
+    const timer = setInterval(check, 60_000);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [connected, model.github]);
 
   if (github.status === 'off' || !settings) {
     return (

@@ -11,6 +11,7 @@ export class FakeGitHub {
   commits = new Map<string, { tree: string; parents: string[]; message: string }>();
   head: string | null = null;
   canPush = true;
+  isPrivate = true;
   token = 'good-token';
   log: string[] = [];
   #counter = 0;
@@ -26,7 +27,7 @@ export class FakeGitHub {
     const rest = match[1] ?? '';
 
     if (rest === '' && init.method === 'GET') {
-      return reply(200, { private: true, default_branch: 'main', html_url: 'https://github.com/me/backups', permissions: { push: this.canPush } });
+      return reply(200, { private: this.isPrivate, default_branch: 'main', html_url: 'https://github.com/me/backups', permissions: { push: this.canPush } });
     }
     if (rest === '/git/ref/heads/main' && init.method === 'GET') {
       return this.head ? reply(200, { object: { sha: this.head } }) : reply(409, { message: 'Git Repository is empty.' });

@@ -35,6 +35,8 @@ export interface BackupResult {
   commitUrl: string;
   uploaded: number;
   deleted: number;
+  /** Whether the repository was private at the time of the backup. */
+  isPrivate: boolean;
 }
 
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<{
@@ -218,12 +220,12 @@ export async function backupProject(client: GitHubClient, target: GitHubTarget, 
   }
 
   const commitUrl = (sha: string): string => `${info.htmlUrl}/commit/${sha}`;
-  if (changes.length === 0) return { changed: false, commit: head.commit, commitUrl: commitUrl(head.commit), uploaded: 0, deleted: 0 };
+  if (changes.length === 0) return { changed: false, commit: head.commit, commitUrl: commitUrl(head.commit), uploaded: 0, deleted: 0, isPrivate: info.private };
 
   const tree = await client.request<{ sha: string }>('POST', `${base}/git/trees`, { base_tree: head.tree, tree: changes });
   const commit = await client.request<{ sha: string }>('POST', `${base}/git/commits`, { message, tree: tree.sha, parents: [head.commit] });
   await client.request('PATCH', `${base}/git/refs/heads/${encodeURIComponent(head.branch)}`, { sha: commit.sha, force: false });
-  return { changed: true, commit: commit.sha, commitUrl: commitUrl(commit.sha), uploaded, deleted };
+  return { changed: true, commit: commit.sha, commitUrl: commitUrl(commit.sha), uploaded, deleted, isPrivate: info.private };
 }
 
 /** The folders at the top of the repository, each of which may be a backed-up project. */
