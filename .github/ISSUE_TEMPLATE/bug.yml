@@ -1,0 +1,24 @@
+name: Report a bug
+description: Something in scribeTex does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it ourselves?
+      description: The steps, and if it is about compiling, a small piece of LaTeX that shows the problem.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and system
+      placeholder: e.g. Chrome 140 on macOS 15
+  - type: markdown
+    attributes:
+      value: Please leave out anything private. Screenshots are welcome.

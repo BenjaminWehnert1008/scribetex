@@ -153,6 +153,13 @@ them itself. The server must send them as they are, **without**
 `Content-Encoding: gzip`. GitHub Pages does. A server that adds that header
 makes every compile fail.
 
+## Contributing
+
+scribeTex is meant to be a community-driven tool. Please
+[report a bug](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=bug.yml) or
+[suggest an improvement](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=idea.yml);
+pull requests are welcome too.
+
 ## Licences
 
 The editor's own code is under the MIT licence, see `LICENSE`. The engine and

@@ -3,7 +3,10 @@
  * writes it as three SVG files in public/:
  *   favicon.svg    the typewriter on a 16 x 16 grid, for the browser tab
  *   logo-mark.svg  the typewriter on a 24 x 24 grid, for the top bar
- *   logo.svg       the typewriter and the word "scribeTex", for the home page
+ *   logo.svg       the typewriter and the word "scribeTex" (README, home page)
+ * The favicon, logo-mark.svg and logo.svg follow the system's dark mode on
+ * their own. The app also has a light/dark switch, which an <img> cannot see,
+ * so logo-mark and logo also come as fixed -light and -dark files.
  * Every pixel is one unit of the SVG's viewBox, so the files stay sharp at any
  * whole-number scale. Edit the grids below and run `npm run logo`.
  */
@@ -98,15 +101,23 @@ function paint(grid, left, top, paths) {
   });
 }
 
-function svg(width, height, paths, title) {
-  const usesDark = Object.keys(paths).some((key) => key in DARK);
-  const style = usesDark
-    ? `<style>@media (prefers-color-scheme: dark){${Object.entries(DARK).map(([key, colour]) => `.${key}{fill:${colour}}`).join('')}}</style>`
-    : '';
+/** mode "auto" follows the system's dark mode; "light" and "dark" are fixed. */
+function svg(width, height, paths, title, mode = 'auto') {
+  const colour = (key) => (mode === 'dark' && key in DARK ? DARK[key] : COLOURS[key]);
+  const style =
+    mode === 'auto'
+      ? `<style>@media (prefers-color-scheme: dark){${Object.entries(DARK).map(([key, dark]) => `.${key}{fill:${dark}}`).join('')}}</style>`
+      : '';
   const body = Object.entries(paths)
-    .map(([key, parts]) => `<path class="${key}" fill="${COLOURS[key]}" d="${parts.join('')}"/>`)
+    .map(([key, parts]) => `<path class="${key}" fill="${colour(key)}" d="${parts.join('')}"/>`)
     .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges"><title>${title}</title>${style}${body}</svg>\n`;
+}
+
+/** Writes name.svg (follows the system) plus name-light.svg and name-dark.svg. */
+function writeAll(name, width, height, paths) {
+  write(`${name}.svg`, svg(width, height, paths, 'scribeTex'));
+  for (const mode of ['light', 'dark']) write(`${name}-${mode}.svg`, svg(width, height, paths, 'scribeTex', mode));
 }
 
 function write(name, text) {
@@ -119,7 +130,7 @@ write('favicon.svg', svg(16, 16, paths, 'scribeTex'));
 
 paths = {};
 paint(MARK, 0, 0, paths);
-write('logo-mark.svg', svg(24, 24, paths, 'scribeTex'));
+writeAll('logo-mark', 24, 24, paths);
 
 let x = 27;
 [...'scribeTex'].forEach((letter, index) => {
@@ -128,4 +139,4 @@ let x = 27;
   paint(glyph, x, 11, paths);
   x += glyph[0].length + 1;
 });
-write('logo.svg', svg(x - 1, 24, paths, 'scribeTex'));
+writeAll('logo', x - 1, 24, paths);
