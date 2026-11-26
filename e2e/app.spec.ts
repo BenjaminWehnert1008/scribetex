@@ -133,7 +133,19 @@ test('opens a project read-only in a second tab until it is taken over', async (
   await expect(page.getByText('open for editing in another tab')).toBeVisible();
 });
 
-test('links a project to a folder and keeps both in step', async ({ page }) => {
+test('links a project to a folder and keeps both in step', async ({ playwright, baseURL }, testInfo) => {
+  // A profile on disk, like the one people use. In the private profile that Playwright gives a test
+  // by default, Chromium 153 exits as soon as a page reads a stored folder handle back from IndexedDB.
+  const context = await playwright.chromium.launchPersistentContext(testInfo.outputPath('profile'), { baseURL });
+  const page = context.pages()[0] ?? (await context.newPage());
+  try {
+    await linkedFolderSteps(page);
+  } finally {
+    await context.close();
+  }
+});
+
+async function linkedFolderSteps(page: Page): Promise<void> {
   // The folder dialog cannot be driven from a test, so it hands out a folder of the browser's private file system.
   await page.addInitScript(() => {
     (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker = async () =>
@@ -180,7 +192,7 @@ test('links a project to a folder and keeps both in step', async ({ page }) => {
   // After a reload the link is still there.
   await page.reload();
   await expect(page.locator('.save-chip')).toHaveText('Saved to folder picked-folder');
-});
+}
 
 test('backs a project up to GitHub and restores it from there', async ({ page }) => {
   const github = new FakeGitHub();

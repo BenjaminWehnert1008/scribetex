@@ -90,7 +90,7 @@ jobs:
 
       - name: Browser tests against the built site
         run: |
-          npx playwright install --with-deps --no-shell chromium
+          npx playwright install --with-deps chromium
           npx playwright test --trace off
         env:
           E2E_SKIP_BUILD: '1'
