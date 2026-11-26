@@ -281,6 +281,10 @@ test.describe('with the LaTeX engine', () => {
     await page.locator('.cm-content').click();
     await page.keyboard.press('ControlOrMeta+Home');
     await page.keyboard.type('\\undefinedcommandhere\n');
+    // New projects do not compile while typing.
+    await page.waitForTimeout(1500);
+    await expect(page.locator('.statusbar')).not.toContainText('error');
+    await page.keyboard.press('ControlOrMeta+Enter');
     // One mistake is one error: the line that says the run ended is not counted.
     await expect(page.locator('.statusbar')).toContainText('1 error,', { timeout: 120_000 });
     await expect(page.getByText('Showing the last version that compiled')).toBeVisible();
