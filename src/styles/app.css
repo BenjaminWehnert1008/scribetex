@@ -122,6 +122,8 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .home-foot { margin-top: 36px; font-size: 12.5px; color: var(--ink-faint); display: flex; gap: 14px; flex-wrap: wrap; }
 .home-foot button { all: unset; cursor: pointer; text-decoration: underline; }
 .home-foot a, .home-by a { color: inherit; }
+.theme-switch { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.theme-switch:hover { color: var(--ink-soft); }
 .home-by { margin-top: 10px; font-size: 12.5px; color: var(--ink-faint); }
 .about {
   margin-top: 40px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-raised);
@@ -289,4 +291,13 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .dialog .notice-card h2 { font-size: 15px; margin-bottom: 4px; }
 @media (max-width: 900px) {
   .ws-body[data-pane='editor'] > .rail, .ws-body[data-pane='pdf'] > .rail { display: none; }
+}
+
+/* Images that come in a light and a dark version (see ThemeSwitch.tsx) */
+.only-dark { display: none !important; }
+:root[data-theme='dark'] .only-light { display: none !important; }
+:root[data-theme='dark'] .only-dark { display: block !important; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .only-light { display: none !important; }
+  :root:not([data-theme='light']) .only-dark { display: block !important; }
 }

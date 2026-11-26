@@ -22,6 +22,7 @@ import { TEMPLATES } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
+import { ThemedImage, ThemeSwitch } from '../common/ThemeSwitch';
 
 function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
   const [name, setName] = useState('');
@@ -161,7 +162,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     <div className="home">
       <div className="home-inner">
         <h1 className="brand">
-          <img src="./logo.svg" alt={APP_NAME} width={255} height={72} />
+          <ThemedImage name="logo" alt={APP_NAME} width={255} height={72} />
         </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 
@@ -276,6 +277,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           <a href="./licenses/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">
             Open-source licences
           </a>
+          <ThemeSwitch withLabel />
         </div>
         <p className="home-by">
           Developed by {AUTHOR_NAME} ·{' '}
