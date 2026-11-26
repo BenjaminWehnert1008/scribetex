@@ -4,6 +4,8 @@
 #
 # The deploy workflow reads this file. A name that tlmgr does not know is
 # reported as a warning in the workflow run and left out; the deploy goes on.
+# The name of a .sty file is not always the name of its package: rotating.sty
+# comes with "graphics" and upgreek.sty with "was", for example.
 # Every package makes the site larger, fonts most of all, and GitHub Pages
 # allows 1 GB in total. Nothing here is downloaded by a visitor until a
 # document asks for it.
@@ -61,7 +63,6 @@ datetime2
 cancel
 physics
 braket
-upgreek
 was
 esint
 mathdots
@@ -83,7 +84,6 @@ ninecolors
 nicematrix
 diagbox
 arydshln
-rotating
 pict2e
 fancybox
 csvsimple
@@ -126,9 +126,7 @@ xurl
 orcidlink
 
 # Fonts
-sourcesanspro
 sourcecodepro
-sourceserifpro
 opensans
 lato
 fira

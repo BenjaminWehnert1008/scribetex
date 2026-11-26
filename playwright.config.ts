@@ -17,7 +17,10 @@ export default defineConfig({
     trace: 'off',
     video: 'off',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // The channel picks the full Chromium in its headless mode, the browser people actually use.
+  // Playwright's default, the smaller "headless shell", exits when a page reads a stored folder
+  // handle back after a reload, which is what a linked folder does.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chromium' } }],
   webServer: {
     command: process.env.E2E_SKIP_BUILD ? preview : `npm run build && ${preview}`,
     url: `http://localhost:${PORT}/`,

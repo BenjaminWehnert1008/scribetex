@@ -57,11 +57,17 @@ jobs:
           # the base tree alone already gives a working editor.
           complete=true
           if ! tlmgr install $extras; then
-            echo "::warning::tlmgr could not install the extra packages in one go. Trying them one at a time."
+            echo "tlmgr could not install the extra packages in one go. Trying them one at a time."
             for name in $extras; do
-              if ! tlmgr install "$name"; then
-                complete=false
-                echo "::warning::The LaTeX package \"$name\" could not be installed and is left out of this build."
+              if ! output=$(tlmgr install "$name" 2>&1); then
+                echo "$output"
+                if echo "$output" | grep -q 'not present in repository'; then
+                  # Trying again would not help, so this does not stand in the way of keeping the engine.
+                  echo "::warning file=engine/extra-packages.txt::TeX Live has no package called \"$name\". Please remove or correct it in engine/extra-packages.txt."
+                else
+                  complete=false
+                  echo "::warning::The LaTeX package \"$name\" could not be installed and is left out of this build. The next run tries again."
+                fi
               fi
             done
           fi
@@ -71,7 +77,7 @@ jobs:
       - name: Assemble the compile engine
         run: npm run engine:prepare
 
-      # An engine folder that misses packages is not kept, so the next run tries again.
+      # An engine folder that misses packages because a download failed is not kept, so the next run tries again.
       - name: Keep the compile engine for the next run
         if: steps.engine.outputs.cache-hit != 'true' && steps.texlive.outputs.complete == 'true'
         uses: actions/cache/save@v6
@@ -84,7 +90,7 @@ jobs:
 
       - name: Browser tests against the built site
         run: |
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps --no-shell chromium
           npx playwright test --trace off
         env:
           E2E_SKIP_BUILD: '1'
