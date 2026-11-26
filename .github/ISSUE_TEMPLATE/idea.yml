@@ -1,0 +1,16 @@
+name: Suggest an improvement
+description: An idea, a missing feature, or something that could be easier.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the idea and what it would help you do.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today?
+      description: Optional. A workaround or another tool you use for it.

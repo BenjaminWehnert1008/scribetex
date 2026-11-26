@@ -91,7 +91,7 @@ export function buildPrompt(input: AskInput): string {
   about.push(ENVIRONMENT);
   if (input.viaFolder) {
     about.push(
-      'The folder you have open is this project. scribeTex keeps it in step with the editor, so please change the files in the folder directly; scribeTex picks the changes up and compiles again. Please do not rename or move files unless I ask.',
+      'The folder you have open is this project. scribeTex keeps it in step with the editor, so please change the files in the folder directly; scribeTex picks the changes up. Please do not rename or move files unless I ask.',
     );
   }
   parts.push(about.join(' '));

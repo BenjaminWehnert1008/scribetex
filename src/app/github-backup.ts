@@ -37,6 +37,8 @@ const settingsKey = (projectId: ProjectId): string => `github:project:${projectI
 const AUTO_DELAY_MS = 60_000;
 const MIN_INTERVAL_MS = 5 * 60_000;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** A repository's visibility is asked for at most this often. */
+const VISIBILITY_CHECK_MS = 5_000;
 
 export async function loadGitHubToken(vault: Vault): Promise<string | null> {
   return vault.getSetting<string | null>(TOKEN_KEY, null);
@@ -67,6 +69,7 @@ export class GitHubBackup {
   readonly #projectId: ProjectId;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #running: Promise<BackupResult | null> | null = null;
+  #checkedAt = 0;
   #disposed = false;
 
   private constructor(vault: Vault, projectId: ProjectId, initial: GitHubState) {
@@ -149,7 +152,7 @@ export class GitHubBackup {
         const project = await this.#vault.requireProject(this.#projectId);
         const { files, skipped } = await collectBackupFiles(this.#vault, this.#projectId);
         const result = await backupProject(new GitHubClient(token), settings.target, files, `Backup of ${project.name}`);
-        const next: GitHubSettings = { ...settings, lastBackupAt: Date.now(), lastCommitUrl: result.commitUrl };
+        const next: GitHubSettings = { ...settings, isPrivate: result.isPrivate, lastBackupAt: Date.now(), lastCommitUrl: result.commitUrl };
         await this.#save(next);
         this.state.set({
           status: 'idle',
@@ -168,6 +171,25 @@ export class GitHubBackup {
       this.#running = null;
     });
     return this.#running;
+  }
+
+  /**
+   * Asks GitHub again whether the repository is private, because that can be
+   * changed on GitHub at any time. Asks at most every 5 seconds; a failure
+   * keeps what was known, and the next backup reports it.
+   */
+  async checkRepository(): Promise<void> {
+    const { settings, status } = this.state.get();
+    if (!settings || status === 'off' || this.#disposed || Date.now() - this.#checkedAt < VISIBILITY_CHECK_MS) return;
+    this.#checkedAt = Date.now();
+    const token = await loadGitHubToken(this.#vault);
+    if (!token) return;
+    const info = await getRepository(new GitHubClient(token), settings.target).catch(() => null);
+    const current = this.state.get().settings;
+    if (!info || !current || this.#disposed || info.private === current.isPrivate) return;
+    const next = { ...current, isPrivate: info.private };
+    await this.#save(next);
+    this.state.patch({ settings: next });
   }
 
   dispose(): void {

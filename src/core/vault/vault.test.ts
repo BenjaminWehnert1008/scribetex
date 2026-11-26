@@ -25,6 +25,8 @@ describe('projects', () => {
   it('creates, updates, lists and deletes projects', async () => {
     const second = await vault.createProject({ name: '  ' });
     expect(second.name).toBe('Untitled project');
+    // A new project compiles only when asked to.
+    expect(second.autoCompile).toBe(false);
     expect((await vault.listProjects()).map((p) => p.id)).toContain(projectId);
 
     await vault.updateProject(projectId, { engine: 'xelatex', mainFile: 'main.tex' });

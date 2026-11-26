@@ -115,7 +115,8 @@ export class Vault {
       mainFile: options.mainFile ?? null,
       engine: options.engine ?? 'pdflatex',
       bib: 'auto',
-      autoCompile: true,
+      // Compiling only on request keeps typing smooth in long documents.
+      autoCompile: false,
       link: null,
       lastExportAt: null,
       fileCount: 0,

@@ -1,6 +1,15 @@
-import { Ellipsis, FileArchive, FolderOpen, GitBranch, Plus } from 'lucide-react';
+import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { APP_NAME, APP_TAGLINE } from '@/app/brand';
+import {
+  APP_NAME,
+  APP_TAGLINE,
+  AUTHOR_GITHUB,
+  AUTHOR_LINKEDIN,
+  AUTHOR_NAME,
+  NEW_BUG_URL,
+  NEW_IDEA_URL,
+  REPO_URL,
+} from '@/app/brand';
 import { canPickFolder, pickFolder } from '@/app/pick-folder';
 import { detectBrowser, notify, reportError, type Services } from '@/app/services';
 import { safeFileName } from '@/app/workspace-model';
@@ -13,6 +22,7 @@ import { TEMPLATES } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
+import { ThemedImage, ThemeSwitch } from '../common/ThemeSwitch';
 
 function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
   const [name, setName] = useState('');
@@ -151,10 +161,9 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   return (
     <div className="home">
       <div className="home-inner">
-        <div className="brand">
-          <img src="./favicon.svg" alt="" width={34} height={34} />
-          <h1>{APP_NAME}</h1>
-        </div>
+        <h1 className="brand">
+          <ThemedImage name="logo" alt={APP_NAME} width={255} height={72} />
+        </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 
         {!browser.folderAccess && (
@@ -238,13 +247,48 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           ))}
         </ul>
 
+        <section className="about" aria-labelledby="about-title">
+          <h2 id="about-title">The idea</h2>
+          <p>
+            {APP_NAME} is a free, open-source LaTeX editor for people who want to write without an account, a subscription or a
+            server. Projects can have real folders, they are saved as you type, and they can live in a folder on your own computer.
+            The PDF is compiled right here in your browser.
+          </p>
+          <p>
+            It is meant to be a community-driven tool, shaped by the people who use it. If something breaks, feels clumsy or is
+            missing, please open an issue on GitHub. Every report helps, and so does code.
+          </p>
+          <div className="about-actions">
+            <a className="btn" href={NEW_BUG_URL} target="_blank" rel="noopener noreferrer">
+              <Bug size={15} /> Report a bug
+            </a>
+            <a className="btn" href={NEW_IDEA_URL} target="_blank" rel="noopener noreferrer">
+              <Lightbulb size={15} /> Suggest an improvement
+            </a>
+            <a className="btn" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+              <Code size={15} /> Source on GitHub
+            </a>
+          </div>
+        </section>
+
         <div className="home-foot">
           <button onClick={() => setNotice(true)}>Where is my work saved?</button>
           <span>Documents are compiled in this browser with pdfLaTeX.</span>
           <a href="./licenses/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">
             Open-source licences
           </a>
+          <ThemeSwitch withLabel />
         </div>
+        <p className="home-by">
+          Developed by {AUTHOR_NAME} ·{' '}
+          <a href={AUTHOR_GITHUB} target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>{' '}
+          ·{' '}
+          <a href={AUTHOR_LINKEDIN} target="_blank" rel="noopener noreferrer">
+            LinkedIn
+          </a>
+        </p>
       </div>
 
       {restoring && (

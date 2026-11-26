@@ -226,6 +226,7 @@ async function linkedFolderSteps(page: Page): Promise<void> {
 
 test('backs a project up to GitHub and restores it from there', async ({ page }) => {
   const github = new FakeGitHub();
+  github.isPrivate = false;
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
   await page.route('https://api.github.com/**', async (route) => {
     const request = route.request();
@@ -250,6 +251,14 @@ test('backs a project up to GitHub and restores it from there', async ({ page })
   await page.getByRole('button', { name: 'Connect and back up' }).click();
   await expect(page.locator('.save-chip')).toContainText('Backed up to GitHub');
   expect(Object.keys(github.files())).toEqual(['Backed up/main.tex', 'Backed up/references.bib', 'README.md']);
+
+  // Made private on GitHub: the warning goes once the person is back in this tab.
+  const publicWarning = page.getByText('This repository is public.');
+  await expect(publicWarning).toBeVisible();
+  github.isPrivate = true;
+  await page.waitForTimeout(5_500);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(publicWarning).toBeHidden();
 
   await page.getByRole('button', { name: 'All projects' }).click();
   await page.getByRole('button', { name: 'Restore from GitHub' }).click();
@@ -312,6 +321,10 @@ test.describe('with the LaTeX engine', () => {
     await page.locator('.cm-content').click();
     await page.keyboard.press('ControlOrMeta+Home');
     await page.keyboard.type('\\undefinedcommandhere\n');
+    // New projects do not compile while typing.
+    await page.waitForTimeout(1500);
+    await expect(page.locator('.statusbar')).not.toContainText('error');
+    await page.keyboard.press('ControlOrMeta+Enter');
     // One mistake is one error: the line that says the run ended is not counted.
     await expect(page.locator('.statusbar')).toContainText('1 error,', { timeout: 120_000 });
     await expect(page.getByText('Showing the last version that compiled')).toBeVisible();

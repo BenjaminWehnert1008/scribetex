@@ -40,6 +40,7 @@ import { GitHubCard } from './GitHubCard';
 import { HistoryPanel, OutlinePanel, StoragePanel } from './Panels';
 import { APP_NAME } from '@/app/brand';
 import { AskClaude } from './AskClaude';
+import { ThemedImage, ThemeSwitch } from '../common/ThemeSwitch';
 
 interface Layout {
   side: number;
@@ -529,6 +530,7 @@ export function Workspace(props: WorkspaceProps) {
         <button className="icon-btn" title="All projects" aria-label="All projects" onClick={props.onHome}>
           <ArrowLeft size={17} />
         </button>
+        <ThemedImage name="logo-mark" className="topbar-mark" alt="" width={24} height={24} />
         <button className="title" title="Project settings" onClick={() => setSettingsOpen(true)}>
           {state.project.name}
         </button>
@@ -558,6 +560,7 @@ export function Workspace(props: WorkspaceProps) {
             <Play size={14} /> Compile
           </button>
         )}
+        <ThemeSwitch />
         <button
           className="icon-btn"
           aria-label="More"

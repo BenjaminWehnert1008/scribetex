@@ -1,12 +1,15 @@
 # scribeTex
 
+<img src="public/logo.svg" alt="scribeTex" width="340">
+
 A LaTeX editor that runs entirely in the browser: a file tree with real
 folders, an editor, and a PDF preview, compiled on your own computer by a
 WebAssembly build of TeX Live. There is no server and no account. The site is
 plain static files and is published with GitHub Pages.
 
 The name is set in
-`src/app/brand.ts` and in the title of `index.html`.
+`src/app/brand.ts` and in the title of `index.html`. The pixel-art logo and
+favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
 
 ## What it does
 
@@ -79,7 +82,7 @@ chat inside scribeTex would need a pay-per-use API key instead.)
   Browsers do not reveal a folder's full path, so the person pastes it once per
   project; it is kept in that browser only. scribeTex notices the changes in
   the folder within a second (Chrome's `FileSystemObserver`; elsewhere at the
-  next check, at most 20 s later) and compiles again.
+  next check, at most 20 s later), and compiles again when "Auto" is on.
 - Without a folder, the question includes the file being edited, around the
   line in question (`claude://claude.ai/new?q=…`).
 - Without the desktop app, "Use claude.ai in the browser" copies the question
@@ -157,6 +160,13 @@ Hosting it somewhere else: the engine fetches its `*.data.gz` files and unpacks
 them itself. The server must send them as they are, **without**
 `Content-Encoding: gzip`. GitHub Pages does. A server that adds that header
 makes every compile fail.
+
+## Contributing
+
+scribeTex is meant to be a community-driven tool. Please
+[report a bug](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=bug.yml) or
+[suggest an improvement](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=idea.yml);
+pull requests are welcome too.
 
 ## Licences
 
