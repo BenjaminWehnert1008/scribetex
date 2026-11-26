@@ -147,6 +147,121 @@ function prepareWorker() {
                     // Auto-rerun loop for cross-references/TOC`,
   );
 
+  // Each TeX pass starts a fresh WebAssembly module and sets up the font map
+  // and file list again (about 350 ms). The worker can replay that work from a
+  // cache, but only when no fetched or project files are mounted, so in
+  // practice never. The set-up only depends on which files sit in the TeX tree,
+  // on font map files and on fonts, so the key below names exactly those and
+  // leaves out the project's .tex, .bib and image files.
+  patch(
+    'reuse the font map work when only project files change',
+    `    const computeFinalizeSig = () =>
+        (accumulatedCtanFiles.size === 0 && packageTLVersions.size === 0)
+            ? 'b:' + [...bundleDataMap.keys()].sort().join(',') +
+              '|d:' + [...deferredBundles].sort().join(',')
+            : null;`,
+    `    // --- changed by scripts/engine-prepare.mjs: key on what finalize() reads ---
+    const computeFinalizeSig = () => {
+        if (packageTLVersions.size !== 0) return null;
+        const files = [];
+        for (const [path, content] of accumulatedCtanFiles) {
+            const lower = path.toLowerCase();
+            const fontMap = lower.endsWith('.map');
+            if (!fontMap && !path.startsWith('/texlive/') && !/\\.(pfb|enc|otf|ttf|ttc)$/.test(lower)) continue;
+            let key = path;
+            if (fontMap) {
+                const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+                let hash = 5381 >>> 0;
+                for (let i = 0; i < bytes.length; i++) hash = ((hash * 33) ^ bytes[i]) >>> 0;
+                key += '#' + bytes.length + ':' + hash;
+            }
+            files.push(key);
+        }
+        return 'b:' + [...bundleDataMap.keys()].sort().join(',') +
+            '|d:' + [...deferredBundles].sort().join(',') +
+            '|f:' + files.sort().join(',');
+    };
+    // --- end of change ---`,
+  );
+
+  // The cache above keeps the font map and file list of each set of packages.
+  // A long session can try many sets, so only the latest few are kept.
+  patch(
+    'keep the font map cache small',
+    `    vfs.finalize();
+    if (signature) {
+        globalFinalizeCache.set(signature, vfs.captureFinalizeOutput());
+    }`,
+    `    vfs.finalize();
+    if (signature) {
+        globalFinalizeCache.set(signature, vfs.captureFinalizeOutput());
+        // --- added by scripts/engine-prepare.mjs ---
+        while (globalFinalizeCache.size > 4) globalFinalizeCache.delete(globalFinalizeCache.keys().next().value);
+    }`,
+  );
+
+  // The merged font map lists most fonts several times (5,654 entries, 4,594
+  // of them repeats). pdfTeX uses the first entry and writes a warning for
+  // every later one, close to a megabyte of log per pass. Keeping only the
+  // first entry per font gives pdfTeX the same fonts without the warnings.
+  patch(
+    'drop repeated font map entries',
+    `    finalize() {
+        this.processFontMaps();
+        this.rewritePdftexMapPaths();`,
+    `    // --- added by scripts/engine-prepare.mjs ---
+    dedupePdftexMap() {
+        const PDFTEX_MAP_PATH = '/texlive/texmf-dist/texmf-var/fonts/map/pdftex/updmap/pdftex.map';
+        let text;
+        try { text = new TextDecoder().decode(this.FS.readFile(PDFTEX_MAP_PATH)); } catch { return; }
+        const seen = new Set();
+        const kept = [];
+        let dropped = 0;
+        for (const line of text.split('\\n')) {
+            const entry = line.replace(/^[ \\t]+/, '');
+            // Empty lines and comments, as pdfTeX's map reader sees them.
+            if (entry === '' || '%#;*'.includes(entry[0])) { kept.push(line); continue; }
+            const font = entry.split(/[ \\t]/, 1)[0];
+            if (seen.has(font)) { dropped++; continue; }
+            seen.add(font);
+            kept.push(line);
+        }
+        if (dropped > 0) {
+            this.FS.writeFile(PDFTEX_MAP_PATH, kept.join('\\n'));
+            this.onLog(\`Dropped \${dropped} repeated font map entries\`);
+        }
+    }
+    // --- end of addition ---
+
+    finalize() {
+        this.processFontMaps();
+        this.rewritePdftexMapPaths();
+        this.dedupePdftexMap();`,
+  );
+
+  // After BibTeX the worker always ran TeX twice more. When the bibliography
+  // BibTeX wrote is the one the first pass already read (restored from the
+  // previous compile), those passes change nothing. Only a new bibliography
+  // needs a pass to typeset it; whether a further pass is needed for the
+  // citation labels is then decided by the log and the aux files, as for any
+  // other cross-reference.
+  patch(
+    'rerun after BibTeX only when the bibliography changed',
+    `                        workerLog('BibTeX completed.');
+                        bibliographyPasses = 2;
+                        maxRerunPasses = Math.max(maxRerunPasses, rerunPass + 2);`,
+    `                        workerLog('BibTeX completed.');
+                        // --- changed by scripts/engine-prepare.mjs ---
+                        const bblAfter = FS.readFile(docBase + '.bbl', { encoding: 'utf8' });
+                        if (bblAfter === firstAux['.bbl']) {
+                            workerLog('Bibliography unchanged.');
+                        } else {
+                            bibliographyPasses = 1;
+                            maxRerunPasses = Math.max(maxRerunPasses, rerunPass + 2);
+                        }
+                        // --- end of change ---`,
+  );
+
   patch(
     'carry index files from one pass to the next',
     `    const auxExtensions = ['.aux', '.toc', '.lof', '.lot', '.out', '.nav', '.snm', '.bbl', '.blg', '-blx.bib'];`,
