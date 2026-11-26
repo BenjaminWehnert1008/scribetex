@@ -154,7 +154,9 @@ export function AskClaude(props: AskClaudeProps) {
             )}
             <p style={{ fontSize: 13.5 }}>
               {viaFolder
-                ? 'Claude opens on this folder and can read and change the files. scribeTex picks up the changes within a few seconds and compiles again.'
+                ? `Claude opens on this folder and can read and change the files. scribeTex picks up the changes within a few seconds${
+                    model.state.get().project.autoCompile ? ' and compiles again.' : '. Press Compile to see them in the PDF.'
+                  }`
                 : 'Without the path, Claude gets your question and the file you are looking at, but cannot change the files itself.'}
             </p>
           </>

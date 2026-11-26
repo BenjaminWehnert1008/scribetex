@@ -78,7 +78,7 @@ chat inside scribeTex would need a pay-per-use API key instead.)
   Browsers do not reveal a folder's full path, so the person pastes it once per
   project; it is kept in that browser only. scribeTex notices the changes in
   the folder within a second (Chrome's `FileSystemObserver`; elsewhere at the
-  next check, at most 20 s later) and compiles again.
+  next check, at most 20 s later), and compiles again when "Auto" is on.
 - Without a folder, the question includes the file being edited, around the
   line in question (`claude://claude.ai/new?q=…`).
 - Without the desktop app, "Use claude.ai in the browser" copies the question
