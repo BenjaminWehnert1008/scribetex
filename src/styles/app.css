@@ -87,6 +87,14 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .home-inner { max-width: 920px; margin: 0 auto; padding: 40px 24px 80px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .brand img { display: block; image-rendering: pixelated; }
+.typing-logo { position: relative; display: block; }
+.typing-logo img { clip-path: inset(0 calc(100% - var(--shown, 100%)) 0 0); }
+/* A block cursor as tall as the letters (logo rows 11 to 20, 3 px each). */
+.type-cursor {
+  position: absolute; top: 33px; width: 12px; height: 30px; background: var(--accent);
+  animation: type-cursor-blink 1s steps(1) infinite;
+}
+@keyframes type-cursor-blink { 50% { opacity: 0; } }
 .home-lead { color: var(--ink-soft); max-width: 62ch; margin-bottom: 26px; }
 .home-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
 .notice-card {
