@@ -24,6 +24,21 @@ function loadPdfjs(): Promise<Pdfjs> {
 
 export type Zoom = 'fit' | number;
 
+/** A point on a page, in PDF points from the page's top left corner. */
+export interface PagePoint {
+  /** Page number, from 1. */
+  page: number;
+  x: number;
+  y: number;
+}
+
+export interface PageRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export interface SurfaceInfo {
   pages: number;
   /** Size on screen relative to the printed size; 1 means 100 %. */
@@ -179,6 +194,66 @@ export class PdfSurface {
     if (next !== undefined) this.setZoom(next);
   }
 
+  /** The page point under a position on screen, or null outside the pages. */
+  pointAt(clientX: number, clientY: number): PagePoint | null {
+    const scale = this.#scale();
+    for (let index = 0; index < this.#slots.length; index++) {
+      const box = this.#slots[index]!.el.getBoundingClientRect();
+      if (clientX < box.left || clientX > box.right || clientY < box.top || clientY > box.bottom) continue;
+      return { page: index + 1, x: (clientX - box.left) / scale, y: (clientY - box.top) / scale };
+    }
+    return null;
+  }
+
+  /** The word printed at a page point, if any, to place the cursor on it in the source. */
+  async wordAt(point: PagePoint): Promise<string | null> {
+    const doc = this.#doc;
+    if (!doc || point.page < 1 || point.page > doc.numPages) return null;
+    try {
+      const page = await doc.getPage(point.page);
+      const viewport = page.getViewport({ scale: 1 });
+      const content = await page.getTextContent();
+      for (const item of content.items) {
+        if (!('str' in item) || item.str.trim() === '' || item.width <= 0) continue;
+        // The item's baseline start, turned into top-left page coordinates.
+        const [x0, y0] = viewport.convertToViewportPoint(item.transform[4] as number, item.transform[5] as number) as [number, number];
+        const height = Math.max(item.height, Math.hypot(item.transform[2] as number, item.transform[3] as number));
+        if (point.x < x0 || point.x > x0 + item.width || point.y < y0 - height || point.y > y0 + height * 0.3) continue;
+        // Glyph widths are not known here; the share of the width is close enough to find the word.
+        const at = Math.min(item.str.length - 1, Math.floor(((point.x - x0) / item.width) * item.str.length));
+        return wordAround(item.str, at);
+      }
+    } catch {
+      // A page that cannot be read only loses the word, not the jump.
+    }
+    return null;
+  }
+
+  /** Scrolls a page point into view and marks the given areas for a moment. */
+  reveal(page: number, rects: PageRect[]): void {
+    const slot = this.#slots[page - 1];
+    if (!slot) return;
+    const scale = this.#scale();
+    const top = rects.length > 0 ? Math.min(...rects.map((rect) => rect.top)) : 0;
+    const bottom = rects.length > 0 ? Math.max(...rects.map((rect) => rect.bottom)) : 0;
+    const scroller = this.#scroller;
+    const pageTop = slot.el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    const middle = pageTop + ((top + bottom) / 2) * scale;
+    scroller.scrollTo({ top: Math.max(0, middle - scroller.clientHeight / 2), behavior: 'smooth' });
+
+    for (const old of this.#host.querySelectorAll('.pdf-mark')) old.remove();
+    for (const rect of rects) {
+      const mark = document.createElement('div');
+      mark.className = 'pdf-mark';
+      mark.style.left = `${(rect.left - 2) * scale}px`;
+      mark.style.top = `${(rect.top - 1) * scale}px`;
+      mark.style.width = `${(rect.right - rect.left + 4) * scale}px`;
+      mark.style.height = `${(rect.bottom - rect.top + 2) * scale}px`;
+      slot.el.append(mark);
+      mark.addEventListener('animationend', () => mark.remove());
+    }
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#observer.disconnect();
@@ -262,7 +337,9 @@ export class PdfSurface {
       await task.promise;
       if (slot.task === task) slot.task = null;
       if (this.#doc !== doc || this.#slots[index] !== slot || this.#disposed) return;
-      slot.el.replaceChildren(canvas);
+      // Keep a mark that is fading out on top of the new picture.
+      const marks = [...slot.el.querySelectorAll('.pdf-mark')];
+      slot.el.replaceChildren(canvas, ...marks);
       slot.renderedKey = key;
     } catch (error) {
       slot.task = null;
@@ -271,4 +348,25 @@ export class PdfSurface {
       if (!cancelled && this.#doc === doc) slot.renderedKey = key;
     }
   }
+}
+
+/** The word of `text` around index `at`, without surrounding punctuation. */
+export function wordAround(text: string, at: number): string | null {
+  const isWord = (char: string | undefined): boolean => char !== undefined && /[\p{L}\p{N}_-]/u.test(char);
+  let index = Math.max(0, Math.min(at, text.length - 1));
+  if (!isWord(text[index])) {
+    // Between two words: take the nearer one.
+    let left = index;
+    let right = index;
+    while (left >= 0 && !isWord(text[left])) left--;
+    while (right < text.length && !isWord(text[right])) right++;
+    if (left < 0 && right >= text.length) return null;
+    index = left < 0 || (right < text.length && right - index <= index - left) ? right : left;
+  }
+  let start = index;
+  let end = index + 1;
+  while (start > 0 && isWord(text[start - 1])) start--;
+  while (end < text.length && isWord(text[end])) end++;
+  const word = text.slice(start, end).replace(/^-+|-+$/g, '');
+  return word.length >= 2 ? word : null;
 }

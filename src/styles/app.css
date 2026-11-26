@@ -280,3 +280,8 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 @media (max-width: 900px) {
   .ws-body[data-pane='editor'] > .rail, .ws-body[data-pane='pdf'] > .rail { display: none; }
 }
+
+/* SyncTeX: where a source line ended up in the PDF, shown for a moment. */
+.pdf-mark { position: absolute; pointer-events: none; border-radius: 3px; background: color-mix(in srgb, var(--accent) 28%, transparent); outline: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); animation: pdf-mark 2.2s ease-out forwards; }
+@keyframes pdf-mark { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pdf-mark { animation-duration: 2.6s; animation-timing-function: steps(1, end); } }

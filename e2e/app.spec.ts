@@ -273,6 +273,37 @@ test.describe('with the LaTeX engine', () => {
     await expect(page.locator('.statusbar')).toContainText('Compiled in');
   });
 
+  test('jumps between a line in a subfolder file and its place in the PDF', async ({ page }) => {
+    await start(page);
+    await createProject(page, 'Sync', 'Report');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+
+    // From the source to the PDF: line 4 of chapters/methods.tex is marked.
+    await row(page, 'methods.tex').click();
+    await page.locator('.cm-line').nth(3).click();
+    await page.getByRole('button', { name: 'Show the cursor position in the PDF' }).click();
+    const mark = page.locator('.pdf-mark').first();
+    await expect(mark).toBeVisible();
+    // The preview scrolls there smoothly; measure once it has stopped.
+    let box = (await mark.boundingBox())!;
+    await expect(async () => {
+      const now = (await mark.boundingBox())!;
+      const moved = Math.abs(now.y - box.y);
+      box = now;
+      expect(moved).toBeLessThan(0.5);
+    }).toPass({ intervals: [150], timeout: 1_500 });
+
+    // From the PDF back to the source, from another file: a double-click on
+    // the first word of the marked line opens that file there, word selected.
+    await row(page, 'main.tex').click();
+    await expect(page.locator('.tab[aria-selected=true]')).toContainText('main.tex');
+    await page.mouse.dblclick(box.x + 12, box.y + box.height / 2);
+    await expect(page.locator('.statusbar')).toContainText('Line 4, column 4');
+    await expect(page.locator('.cm-content')).toContainText('How the work was done.');
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('How');
+  });
+
   test('shows an error with its file and line, and keeps the last good PDF', async ({ page }) => {
     await start(page);
     await createProject(page, 'Broken', 'Article');
