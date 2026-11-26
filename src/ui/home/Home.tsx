@@ -151,10 +151,9 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   return (
     <div className="home">
       <div className="home-inner">
-        <div className="brand">
-          <img src="./favicon.svg" alt="" width={34} height={34} />
-          <h1>{APP_NAME}</h1>
-        </div>
+        <h1 className="brand">
+          <img src="./logo.svg" alt={APP_NAME} width={255} height={72} />
+        </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 
         {!browser.folderAccess && (
