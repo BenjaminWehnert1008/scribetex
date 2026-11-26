@@ -23,7 +23,7 @@ import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '..
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
 import { ThemeSwitch } from '../common/ThemeSwitch';
-import { TypingLogo } from './TypingLogo';
+import { PixelLogo } from './PixelLogo';
 
 function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
   const [name, setName] = useState('');
@@ -163,7 +163,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     <div className="home">
       <div className="home-inner">
         <h1 className="brand">
-          <TypingLogo alt={APP_NAME} paused={notice} />
+          <PixelLogo label={APP_NAME} paused={notice} />
         </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 
