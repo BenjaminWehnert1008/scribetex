@@ -4,7 +4,8 @@
  * The project in the browser stays the copy the editor works on. A pass lists
  * the folder, compares both sides with what they agreed on last time (see
  * `plan.ts`) and copies what changed. Passes run after saves, when the window
- * gets the focus back, on a timer, and on request.
+ * gets the focus back, on a timer, on request, and (where the browser can
+ * watch folders) soon after something in the folder changed.
  */
 import { sha256Hex } from '../hash';
 import { outputPdfPath } from '../latex/deps';
@@ -23,6 +24,7 @@ import {
   writeDiskFile,
 } from './disk';
 import { planSync, type Stamp, type SyncAction } from './plan';
+import { watchFolder } from './watch';
 
 export type FolderStatus =
   | 'off' // the project is not linked
@@ -88,6 +90,8 @@ export class FolderSync {
   #output: { bytes: Uint8Array; hash: Hash } | null = null;
   #writtenOutput: Hash | null = null;
   #disposed = false;
+  #onOutsideChange: (() => void) | null = null;
+  #watching: { root: DirHandle; stop: () => void } | null = null;
 
   private constructor(vault: Vault, projectId: ProjectId, options: FolderSyncOptions, root: DirHandle | null, initial: FolderState) {
     this.#vault = vault;
@@ -143,6 +147,7 @@ export class FolderSync {
     await this.#options.beforeLinkChange?.();
     await this.#running?.catch(() => undefined);
     this.#root = null;
+    this.#unwatch();
     await this.#vault.forgetHandle(this.#projectId);
     await this.#vault.setSetting(this.#baseKey(), {});
     await this.#vault.clearMirrorQueue(this.#projectId);
@@ -171,6 +176,21 @@ export class FolderSync {
   }
 
   /**
+   * Calls `onChange` when the browser notices a change in the linked folder,
+   * so the caller can start a pass. Watching starts after the next pass that
+   * could reach the folder, and follows the link when it changes. Returns a
+   * function that stops it.
+   */
+  watch(onChange: () => void): () => void {
+    this.#onOutsideChange = onChange;
+    this.#keepWatching();
+    return () => {
+      if (this.#onOutsideChange === onChange) this.#onOutsideChange = null;
+      this.#unwatch();
+    };
+  }
+
+  /**
    * Runs a pass, or makes sure one more runs after the current one. The
    * answer to the accident guard is passed as `massDeletion`.
    */
@@ -187,6 +207,7 @@ export class FolderSync {
         await this.#pass(next.massDeletion);
         next = this.#queued;
       }
+      this.#keepWatching();
     };
     this.#running = run(options).finally(() => {
       this.#running = null;
@@ -196,7 +217,34 @@ export class FolderSync {
 
   async dispose(): Promise<void> {
     this.#disposed = true;
+    this.#unwatch();
     await this.#running?.catch(() => undefined);
+  }
+
+  /** Watches the linked folder while someone listens and the folder can be read. */
+  #keepWatching(): void {
+    const root = this.#root;
+    const status = this.state.get().status;
+    if (!root || !this.#onOutsideChange || this.#disposed || status === 'needs-permission' || status === 'error') {
+      this.#unwatch();
+      return;
+    }
+    if (this.#watching?.root === root) return;
+    this.#unwatch();
+    const stop = watchFolder(
+      root,
+      () => this.#onOutsideChange?.(),
+      // Watching ended (access taken back, folder gone). The next pass finds out why and starts it again if it can.
+      () => {
+        if (this.#watching?.root === root) this.#watching = null;
+      },
+    );
+    if (stop) this.#watching = { root, stop };
+  }
+
+  #unwatch(): void {
+    this.#watching?.stop();
+    this.#watching = null;
   }
 
   // ---- one pass -------------------------------------------------------------

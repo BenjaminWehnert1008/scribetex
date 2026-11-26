@@ -222,6 +222,11 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .problem .headline { font-weight: 600; }
 .problem .where-line { font-size: 12px; color: var(--ink-soft); font-family: var(--font-mono); }
 .problem .hint { font-size: 12.5px; color: var(--ink-soft); }
+.problem-row { display: flex; align-items: flex-start; }
+.problem-row .problem { flex: 1; min-width: 0; }
+.problem-row .ask { margin: 4px 8px 0 0; color: var(--ink-soft); opacity: 0; }
+.problem-row:hover .ask, .problem-row .ask:focus-visible { opacity: 1; }
+@media (hover: none) { .problem-row .ask { opacity: 1; } }
 .problem .rawmsg { font-size: 12px; color: var(--ink-faint); font-family: var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .log { flex: 1; overflow: auto; margin: 0; padding: 8px 12px; font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft); }
 .all-good { padding: 14px 12px; color: var(--ink-soft); }

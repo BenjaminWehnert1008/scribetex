@@ -52,6 +52,7 @@ const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
 const AUTO_COMPILE_DELAY_MS = 900;
 const FOLDER_SYNC_DELAY_MS = 700;
 const FOLDER_POLL_MS = 20_000;
+const claudeFolderKey = (projectId: ProjectId): string => `claude:folder:${projectId}`;
 
 export function tabKindOf(entry: FileEntry): TabKind {
   const ext = extname(entry.path).toLowerCase();
@@ -159,6 +160,20 @@ export class WorkspaceModel {
   /** The main file in effect: the chosen one, or the one the compiler detected. */
   mainFile(): Path | null {
     return this.state.get().project.mainFile ?? this.compile.state.get().mainFile;
+  }
+
+  /** The text of a file as the editor has it, including edits not saved yet. */
+  async readText(path: Path): Promise<string> {
+    return this.session.text(path) ?? new TextDecoder().decode(await this.readBytes(path));
+  }
+
+  /** Where the linked folder is on this computer, as the person gave it for "Ask Claude". Kept in this browser only. */
+  async claudeFolderPath(): Promise<string | null> {
+    return this.#deps.vault.getSetting<string | null>(claudeFolderKey(this.projectId), null);
+  }
+
+  async setClaudeFolderPath(path: string | null): Promise<void> {
+    await this.#deps.vault.setSetting(claudeFolderKey(this.projectId), path);
   }
 
   async readBytes(path: Path): Promise<Uint8Array> {
@@ -405,6 +420,8 @@ export class WorkspaceModel {
         if (this.folder.linked && !this.state.get().readOnly) this.folder.setOutput(pdf);
       }),
     );
+    // Changes made in the folder by another program, such as Claude working on it.
+    this.#disposers.push(this.folder.watch(() => this.#scheduleFolderSync()));
     const poll = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') void this.syncFolder();
     }, FOLDER_POLL_MS);

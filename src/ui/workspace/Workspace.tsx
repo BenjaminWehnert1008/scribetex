@@ -10,6 +10,7 @@ import {
   ListTree,
   PanelBottom,
   Play,
+  Sparkles,
   Square,
   TriangleAlert,
   X,
@@ -36,6 +37,7 @@ import { FolderCard } from './FolderCard';
 import { GitHubCard } from './GitHubCard';
 import { HistoryPanel, OutlinePanel, StoragePanel } from './Panels';
 import { APP_NAME } from '@/app/brand';
+import { AskClaude } from './AskClaude';
 
 interface Layout {
   side: number;
@@ -195,7 +197,13 @@ function FilePreview(props: { model: WorkspaceModel; tab: Tab }) {
   );
 }
 
-function Problems(props: { diagnostics: Diagnostic[]; ok: boolean | null; error: string | null; onOpen: (file: Path, line: number) => void }) {
+function Problems(props: {
+  diagnostics: Diagnostic[];
+  ok: boolean | null;
+  error: string | null;
+  onOpen: (file: Path, line: number) => void;
+  onAsk: (diagnostic: Diagnostic) => void;
+}) {
   if (props.diagnostics.length === 0) {
     return <p className="all-good">{props.ok === null ? 'Problems appear here after the first compile.' : props.ok ? 'No problems found.' : (props.error ?? 'The compile failed.')}</p>;
   }
@@ -205,7 +213,7 @@ function Problems(props: { diagnostics: Diagnostic[]; ok: boolean | null; error:
         const explained = explain(diagnostic);
         const Icon = diagnostic.severity === 'error' ? CircleX : diagnostic.severity === 'warning' ? TriangleAlert : Info;
         return (
-          <li key={position}>
+          <li key={position} className="problem-row">
             <button
               className="problem"
               disabled={diagnostic.file === null}
@@ -227,6 +235,9 @@ function Problems(props: { diagnostics: Diagnostic[]; ok: boolean | null; error:
                 {explained && <span className="rawmsg" style={{ display: 'block' }}>{diagnostic.message}</span>}
                 {diagnostic.context && <span className="rawmsg" style={{ display: 'block' }}>{diagnostic.context}</span>}
               </span>
+            </button>
+            <button className="btn small quiet ask" title="Ask Claude about this problem" onClick={() => props.onAsk(diagnostic)}>
+              <Sparkles size={13} /> Ask Claude
             </button>
           </li>
         );
@@ -309,6 +320,7 @@ export function Workspace(props: WorkspaceProps) {
   const [pane, setPane] = useState<'files' | 'editor' | 'pdf'>('editor');
   const [cursor, setCursor] = useState<{ line: number; column: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [asking, setAsking] = useState<{ problem: Diagnostic | null } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(model.recovered.length > 0);
   const [index, setIndex] = useState<ProjectIndex | null>(null);
@@ -499,6 +511,10 @@ export function Workspace(props: WorkspaceProps) {
           />
           Auto
         </label>
+        <button className="btn" onClick={() => setAsking({ problem: null })} title="Ask Claude about this project">
+          <Sparkles size={14} />
+          <span className="hide-narrow">Ask Claude</span>
+        </button>
         {running ? (
           <button className="btn" onClick={() => model.compile.stop()} title="Stop the compile">
             <Square size={14} /> Stop
@@ -638,7 +654,13 @@ export function Workspace(props: WorkspaceProps) {
                     </button>
                   </div>
                   {state.bottomTab === 'problems' ? (
-                    <Problems diagnostics={problems} ok={compile.ok} error={compile.error} onOpen={(file, line) => void model.openFile(file, line)} />
+                    <Problems
+                      diagnostics={problems}
+                      ok={compile.ok}
+                      error={compile.error}
+                      onOpen={(file, line) => void model.openFile(file, line)}
+                      onAsk={(problem) => setAsking({ problem })}
+                    />
                   ) : (
                     <pre className="log" tabIndex={0}>
                       {compile.log || 'The log of the last compile appears here.'}
@@ -700,6 +722,17 @@ export function Workspace(props: WorkspaceProps) {
             { label: 'Download project as ZIP', run: exportZip },
             { label: 'Show the full log', separatorBefore: true, run: () => model.setBottom(true, 'log') },
           ]}
+        />
+      )}
+      {asking && (
+        <AskClaude
+          model={model}
+          problem={asking.problem}
+          problems={problems}
+          folderName={folder.status === 'off' ? null : folder.folderName}
+          activeFile={activeTab?.kind === 'text' ? activeTab.path : null}
+          cursorLine={cursor?.line ?? null}
+          onClose={() => setAsking(null)}
         />
       )}
       {settingsOpen && (

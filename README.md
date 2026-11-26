@@ -17,6 +17,7 @@ The name is set in
 - pdfLaTeX with BibTeX and makeindex, compiled in the browser, with a PDF
   preview next to the source. Compiling on every change can be switched on.
 - Saving that is built so that work is not lost. See the next section.
+- **Ask Claude**, from the top bar or next to any problem. See below.
 
 ## Where the work is saved
 
@@ -59,6 +60,31 @@ the user creates and that is stored in that browser only. To set it up:
 
 Each backup is one commit. "Restore from GitHub" on the start page brings a
 project back on another computer.
+
+## Ask Claude
+
+scribeTex has no assistant of its own and never talks to Claude itself. The
+**Ask Claude** button opens the Claude desktop app with a question already
+written in: the person's question, the problem with its file, line and log,
+and what the engine can and cannot do. The person sends it there, with their
+own Claude plan. (Other apps may not sign in with a Claude subscription, so a
+chat inside scribeTex would need a pay-per-use API key instead.)
+
+- When the project is linked to a folder, the app opens on that folder
+  (`claude://cowork/new?folder=…`), and Claude can read and change the files.
+  Browsers do not reveal a folder's full path, so the person pastes it once per
+  project; it is kept in that browser only. scribeTex notices the changes in
+  the folder within a second (Chrome's `FileSystemObserver`; elsewhere at the
+  next check, at most 20 s later) and compiles again.
+- Without a folder, the question includes the file being edited, around the
+  line in question (`claude://claude.ai/new?q=…`).
+- Without the desktop app, "Use claude.ai in the browser" copies the question
+  and opens claude.ai.
+
+The links are described in
+[Open Claude Desktop with a link](https://support.claude.com/en/articles/14729294).
+The app fills in the message but does not send it, and keeps about 14,000
+characters, so scribeTex keeps questions under 12,000.
 
 ## Limits
 

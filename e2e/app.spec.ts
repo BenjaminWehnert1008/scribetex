@@ -192,6 +192,36 @@ async function linkedFolderSteps(page: Page): Promise<void> {
   // After a reload the link is still there.
   await page.reload();
   await expect(page.locator('.save-chip')).toHaveText('Saved to folder picked-folder');
+
+  // Another program edits a file in the folder, as Claude does when it works on it. The editor shows the change
+  // well before the next timed check (20 s), because the browser reports changes in the folder.
+  await row(page, 'main.tex').click();
+  await expect(page.locator('.cm-content')).toContainText('% written in the editor');
+  await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked-folder');
+    const file = await root.getFileHandle('main.tex');
+    const text = await (await file.getFile()).text();
+    const writable = await file.createWritable();
+    await writable.write(text.replace('% written in the editor', '% changed by another program'));
+    await writable.close();
+  });
+  await expect(page.locator('.cm-content')).toContainText('% changed by another program', { timeout: 8_000 });
+
+  // "Ask Claude" opens the Claude app on the folder, once it knows where the folder is.
+  await page.getByRole('button', { name: 'Ask Claude', exact: true }).click();
+  const ask = page.getByRole('dialog', { name: 'Ask Claude' });
+  await ask.getByLabel('Your question').fill('Make the title shorter');
+  await ask.getByLabel('Where the folder "picked-folder" is on this computer').fill('"C:\\Users\\Anna\\picked-folder\\"');
+  const link = new URL((await ask.getByRole('link', { name: 'Open in the Claude app' }).getAttribute('href')) ?? '');
+  expect(`${link.protocol}//${link.host}${link.pathname}`).toBe('claude://cowork/new');
+  expect(link.searchParams.get('folder')).toBe('C:\\Users\\Anna\\picked-folder');
+  expect(link.searchParams.get('q')).toMatch(/^Make the title shorter\n/);
+  expect(link.searchParams.get('q')).toContain('change the files in the folder directly');
+  await ask.getByRole('button', { name: 'Cancel' }).click();
+
+  // The path is remembered for the project.
+  await page.getByRole('button', { name: 'Ask Claude', exact: true }).click();
+  await expect(page.getByLabel('Where the folder "picked-folder" is on this computer')).toHaveValue('C:\\Users\\Anna\\picked-folder');
 }
 
 test('backs a project up to GitHub and restores it from there', async ({ page }) => {
@@ -256,6 +286,36 @@ test.describe('with the LaTeX engine', () => {
     await expect(page.getByText('Showing the last version that compiled')).toBeVisible();
     await page.locator('.statusbar button').first().click();
     await expect(page.locator('.problem').first()).toContainText('main.tex:1');
+
+    // Asking Claude about it: without a linked folder, the question carries the error and the file.
+    await page.locator('.problem-row').first().getByRole('button', { name: 'Ask Claude' }).click();
+    const ask = page.getByRole('dialog', { name: 'Ask Claude' });
+    await expect(ask.getByLabel('Your question')).toHaveValue('Please explain this error and show me how to fix it.');
+    const link = new URL((await ask.getByRole('link', { name: 'Open in the Claude app' }).getAttribute('href')) ?? '');
+    expect(`${link.protocol}//${link.host}${link.pathname}`).toBe('claude://claude.ai/new');
+    const prompt = link.searchParams.get('q') ?? '';
+    expect(prompt).toContain('Error (main.tex, line 1): Undefined control sequence.');
+    expect(prompt).toContain('   1  \\undefinedcommandhere');
+
+    // claude.ai in the browser gets the same question through the clipboard.
+    await page.evaluate(() => {
+      const record = window as unknown as { copied: string[]; opened: string[] };
+      record.copied = [];
+      record.opened = [];
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => void record.copied.push(text) }, configurable: true });
+      window.open = (url?: string | URL) => {
+        record.opened.push(String(url));
+        return null;
+      };
+    });
+    await ask.getByRole('button', { name: 'Use claude.ai in the browser' }).click();
+    await expect(ask).toBeHidden();
+    const record = await page.evaluate(() => {
+      const { copied, opened } = window as unknown as { copied: string[]; opened: string[] };
+      return { copied, opened };
+    });
+    expect(record.opened).toEqual(['https://claude.ai/new']);
+    expect(record.copied).toEqual([prompt]);
   });
 
   test('loads fonts and language files that a document needs without naming them', async ({ page }) => {
