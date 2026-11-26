@@ -22,7 +22,8 @@ import { TEMPLATES } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
-import { ThemedImage, ThemeSwitch } from '../common/ThemeSwitch';
+import { ThemeSwitch } from '../common/ThemeSwitch';
+import { PixelLogo } from './PixelLogo';
 
 function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
   const [name, setName] = useState('');
@@ -162,7 +163,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     <div className="home">
       <div className="home-inner">
         <h1 className="brand">
-          <ThemedImage name="logo" alt={APP_NAME} width={255} height={72} />
+          <PixelLogo label={APP_NAME} paused={notice} />
         </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 

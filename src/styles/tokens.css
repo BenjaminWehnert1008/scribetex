@@ -37,6 +37,12 @@
   --syn-bracket: #5b564b;
   --syn-string: #2c5f9e;
 
+  /* Logo colours that change with the mode (src/app/logo-pixels.json). */
+  --logo-K: #23211c;
+  --logo-R: #3a372f;
+  --logo-I: #23211c;
+  --logo-A: #17715b;
+
   --radius: 6px;
   --bar-height: 44px;
   --status-height: 26px;
@@ -45,6 +51,10 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    --logo-K: #6b665a;
+    --logo-R: #2a2823;
+    --logo-I: #ece8dd;
+    --logo-A: #4cc2a0;
     --paper: #1b1a17;
     --paper-raised: #24231f;
     --paper-sunk: #151412;
@@ -76,6 +86,10 @@
 }
 
 :root[data-theme='dark'] {
+  --logo-K: #6b665a;
+  --logo-R: #2a2823;
+  --logo-I: #ece8dd;
+  --logo-A: #4cc2a0;
   --paper: #1b1a17;
   --paper-raised: #24231f;
   --paper-sunk: #151412;
