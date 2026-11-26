@@ -262,6 +262,22 @@ function prepareWorker() {
                         // --- end of change ---`,
   );
 
+  // The worker finds missing fonts in the log with patterns that expect an
+  // error to start with "!" and to sit on one line. It compiles with
+  // --file-line-error, which starts errors with "file:line:" instead, and TeX
+  // breaks log lines after 79 characters, so "Font ... not loadable: Metric
+  // (TFM) file not found" was never recognised and no font was ever fetched.
+  patch(
+    'recognise missing fonts in the log',
+    `function extractAllMissingFiles(logContent, alreadyFetched) {`,
+    `function extractAllMissingFiles(logContent, alreadyFetched) {
+    // --- added by scripts/engine-prepare.mjs ---
+    logContent = String(logContent || '')
+        .replace(/^(.{79})\\n/gm, '$1')
+        .replace(/^[^\\n]*?:\\d+: (?=LaTeX Error:|Font )/gm, '! ');
+    // --- end of addition ---`,
+  );
+
   patch(
     'carry index files from one pass to the next',
     `    const auxExtensions = ['.aux', '.toc', '.lof', '.lot', '.out', '.nav', '.snm', '.bbl', '.blg', '-blx.bib'];`,
@@ -301,6 +317,30 @@ function preparePackages(runtimeDir) {
   }
   const index = JSON.parse(fs.readFileSync(path.join(target, 'index.json'), 'utf8'));
   return index.length;
+}
+
+/**
+ * TeX names a missing font by its metric file ("ptmr7t" for Times), and the
+ * engine looks that name up in file-to-package.json, which only lists macro
+ * files such as "helvet.sty". So Times, Helvetica, Courier and other font
+ * packages failed to load although they are hosted. The runtime's font index
+ * knows which package has which font; its entries for hosted packages are
+ * added to the file index.
+ */
+function addFontNames(runtimeDir) {
+  const indexFile = path.join(OUT, 'packages/bundles/file-to-package.json');
+  const hosted = new Set(JSON.parse(fs.readFileSync(path.join(OUT, 'packages/index.json'), 'utf8')).map((item) => item.name));
+  const files = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+  const fonts = JSON.parse(fs.readFileSync(path.join(runtimeDir, 'font-file-to-package.json'), 'utf8'));
+  let added = 0;
+  for (const [font, name] of Object.entries(fonts)) {
+    if (hosted.has(name) && !Object.hasOwn(files, font)) {
+      files[font] = name;
+      added++;
+    }
+  }
+  if (added > 0) fs.writeFileSync(indexFile, JSON.stringify(files));
+  log(`${added} font names added to the package index`);
 }
 
 function writeNotes(patches, packageCount) {
@@ -361,5 +401,6 @@ of each package can be downloaded.
 const runtimeDir = prepareRuntime();
 const patches = prepareWorker();
 const packageCount = preparePackages(runtimeDir);
+addFontNames(runtimeDir);
 writeNotes(patches, packageCount);
 log(`done: ${packageCount} packages, output in ${path.relative(ROOT, OUT)}`);
