@@ -1,12 +1,15 @@
 # scribeTex
 
+<img src="public/logo.svg" alt="scribeTex" width="340">
+
 A LaTeX editor that runs entirely in the browser: a file tree with real
 folders, an editor, and a PDF preview, compiled on your own computer by a
 WebAssembly build of TeX Live. There is no server and no account. The site is
 plain static files and is published with GitHub Pages.
 
 The name is set in
-`src/app/brand.ts` and in the title of `index.html`.
+`src/app/brand.ts` and in the title of `index.html`. The pixel-art logo and
+favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
 
 ## What it does
 

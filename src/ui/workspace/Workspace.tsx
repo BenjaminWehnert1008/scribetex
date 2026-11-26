@@ -495,6 +495,7 @@ export function Workspace(props: WorkspaceProps) {
         <button className="icon-btn" title="All projects" aria-label="All projects" onClick={props.onHome}>
           <ArrowLeft size={17} />
         </button>
+        <img className="topbar-mark" src="./logo-mark.svg" alt="" width={24} height={24} />
         <button className="title" title="Project settings" onClick={() => setSettingsOpen(true)}>
           {state.project.name}
         </button>
