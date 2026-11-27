@@ -278,18 +278,22 @@ function prepareWorker() {
     // --- end of addition ---`,
   );
 
-  // A font's metrics and its outlines can sit in different packages. The font
-  // map sends Palatino small capitals (metrics pplrc8r, from palatino) to the
-  // outline file fplrc8a.pfb, which is in fpl. pdfTeX opens the outlines only
-  // when it writes the PDF and then stops with "cannot open Type 1 font file
-  // for reading". No pattern knew that message, so fpl was never fetched. The
-  // name without ".pfb" finds its package in the file index.
+  // A font's metrics, outlines and encoding can sit in different packages.
+  // The font map sends Palatino small capitals (metrics pplrc8r, from
+  // palatino) to the outline file fplrc8a.pfb, which is in fpl, and the newpx
+  // fonts to encoding files such as ntx-ec-tlf.enc, which are in newtx. pdfTeX
+  // opens these files only when it writes the PDF, and then stops with "cannot
+  // open Type 1 font file for reading" or "cannot open encoding file for
+  // reading". No pattern knew those messages, so the package was never
+  // fetched. An outline is looked up by its name without ".pfb" (the font
+  // names in the file index), an encoding file by its full name.
   patch(
-    'fetch the package of a missing Type 1 font file',
+    'fetch the package of a missing font outline or encoding file',
     `        /! Font ([a-z0-9-]+) at [0-9]+ not found/g,`,
     `        /! Font ([a-z0-9-]+) at [0-9]+ not found/g,
         // --- added by scripts/engine-prepare.mjs ---
         /!pdfTeX error:.*\\(file ([a-z0-9_-]+)\\.pfb\\): cannot open Type 1 font file/g,
+        /!pdfTeX error:.*\\(file ([a-z0-9_.-]+\\.enc)\\): cannot open encoding file/g,
         // --- end of addition ---`,
   );
 

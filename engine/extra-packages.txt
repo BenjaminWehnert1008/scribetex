@@ -142,3 +142,4 @@ pythonhighlight
 newpx
 appendixnumberbeamer
 catchfile
+apalike2

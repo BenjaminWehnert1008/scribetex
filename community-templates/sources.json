@@ -83,7 +83,7 @@
       "main": "Main.tex",
       "files": ["Main.tex", "TeX"],
       "previewPdf": "Main.pdf",
-      "packages": ["doublestroke", "pythonhighlight"]
+      "packages": ["doublestroke", "pythonhighlight", "apalike2"]
     },
     {
       "id": "lecture-notes",
