@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, test } from '@playwright/test';
 import { FakeGitHub } from '../src/core/github/fake-github';
+import { sampleThesis } from '../src/core/docx/test-docx';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const engineReady = fs.existsSync(path.join(root, 'dist/engine/runtime/runtime.json'));
@@ -149,6 +150,41 @@ test('exports a ZIP and imports it as a new project', async ({ page }) => {
   await expect(page.locator('.topbar .title')).toHaveText('Copy of roundtrip');
   await expect(row(page, 'chapters')).toBeVisible();
   await expect(row(page, 'methods.tex')).toBeVisible();
+});
+
+async function importWord(page: Page): Promise<void> {
+  await page.getByLabel('Word file to import').setInputFiles({
+    name: 'My thesis.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: Buffer.from(sampleThesis()),
+  });
+  const dialog = page.getByRole('dialog', { name: 'Word file imported' });
+  await expect(dialog).toContainText('Moving from Word to LaTeX is now a LaTeX project.');
+  await expect(dialog).toContainText('3 section files · 1 picture · 1 table · 1 equation · 2 lists · 1 footnote · 1 reference');
+  await dialog.getByRole('button', { name: 'Open the project' }).click();
+  await expect(page.locator('.topbar .title')).toHaveText('Moving from Word to LaTeX');
+}
+
+test('turns a Word file into a project with sections, pictures and references', async ({ page }) => {
+  await start(page);
+  await importWord(page);
+  await expect(row(page, 'sections')).toBeVisible();
+  await expect(row(page, 'images')).toBeVisible();
+  await expect(row(page, 'references.bib')).toBeVisible();
+  await expect(page.locator('.cm-content')).toContainText('\\input{sections/01-introduction}');
+});
+
+test('explains why an old .doc file cannot be imported', async ({ page }) => {
+  await start(page);
+  await page.getByLabel('Word file to import').setInputFiles({
+    name: 'old.doc',
+    mimeType: 'application/msword',
+    buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]),
+  });
+  const dialog = page.getByRole('dialog', { name: 'The Word file could not be imported' });
+  await expect(dialog).toContainText('save it as .docx');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByText('No projects yet.')).toBeVisible();
 });
 
 test('opens a project read-only in a second tab until it is taken over', async ({ page, context }) => {
@@ -309,6 +345,15 @@ test.describe('with the LaTeX engine', () => {
     await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
     await expect(page.locator('.pdf-bar')).toContainText('6 pages');
     await expect(page.locator('.statusbar')).toContainText('Compiled in');
+  });
+
+  test('compiles a project imported from a Word file', async ({ page }) => {
+    await start(page);
+    await importWord(page);
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await expect(page.locator('.statusbar')).toContainText('No problems');
+    await expect(page.locator('.pdf-bar')).toContainText('2 pages');
   });
 
   test('jumps between a line in a subfolder file and its place in the PDF', async ({ page }) => {

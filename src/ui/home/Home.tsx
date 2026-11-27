@@ -1,4 +1,4 @@
-import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, Plus } from 'lucide-react';
+import { Bug, Code, Ellipsis, FileArchive, FileText, FolderOpen, GitBranch, Lightbulb, Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   APP_NAME,
@@ -10,6 +10,7 @@ import {
   NEW_IDEA_URL,
   REPO_URL,
 } from '@/app/brand';
+import { imageToPng } from '@/app/image-to-png';
 import { canPickFolder, pickFolder } from '@/app/pick-folder';
 import { detectBrowser, notify, reportError, type Services } from '@/app/services';
 import { safeFileName } from '@/app/workspace-model';
@@ -23,6 +24,7 @@ import { RestoreDialog } from './RestoreDialog';
 import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { NewProjectDialog } from './NewProjectDialog';
 import { PixelLogo } from './PixelLogo';
+import { WordImportDialog, type WordImport } from './WordImportDialog';
 
 export function Home(props: { services: Services; onOpen: (id: ProjectId) => void }) {
   const { services } = props;
@@ -35,6 +37,8 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [restoring, setRestoring] = useState(false);
   const [opening, setOpening] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
+  const wordInput = useRef<HTMLInputElement>(null);
+  const [wordImport, setWordImport] = useState<WordImport | null>(null);
   const now = useTick(30_000);
 
   const refresh = useCallback(() => {
@@ -70,6 +74,24 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     const result = await importZipAsProject(services.vault, name, bytes);
     if (result.skipped.length > 0) notify(`${result.skipped.length} entries of the ZIP were left out because of their names.`);
     props.onOpen(result.projectId);
+  };
+
+  /** Turns a Word file into a new project, in this browser. */
+  const importWord = async (file: File): Promise<void> => {
+    const fileName = file.name;
+    setWordImport({ state: 'converting', fileName });
+    try {
+      // The converter is only downloaded when someone imports a Word file.
+      const { importDocxAsProject, MAX_DOCX_BYTES } = await import('@/core/docx/import');
+      if (file.size > MAX_DOCX_BYTES) throw new Error('This file is larger than 200 MB. Compress the pictures in Word (File > Compress Pictures) and try again.');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // Let the dialog paint before the conversion keeps the page busy.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const { projectId, result } = await importDocxAsProject(services.vault, bytes, { fileName, toPng: imageToPng });
+      setWordImport({ state: 'done', fileName, projectId, result });
+    } catch (error) {
+      setWordImport({ state: 'failed', fileName, message: error instanceof Error ? error.message : String(error) });
+    }
   };
 
   /** Opens a folder from disk as a project. The folder stays the place where its files live. */
@@ -132,6 +154,13 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           <button className="btn" onClick={() => zipInput.current?.click()}>
             <FileArchive size={15} /> Import a ZIP
           </button>
+          <button
+            className="btn"
+            title="Turn a Word document (.docx) into a LaTeX project. It is converted in this browser and not uploaded."
+            onClick={() => wordInput.current?.click()}
+          >
+            <FileText size={15} /> Import a Word file
+          </button>
           <button className="btn" onClick={() => setRestoring(true)}>
             <GitBranch size={15} /> Restore from GitHub
           </button>
@@ -146,6 +175,18 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
               if (file) importZip(file).catch((error: unknown) => reportError(error, 'The ZIP could not be imported'));
             }}
           />
+          <input
+            ref={wordInput}
+            type="file"
+            aria-label="Word file to import"
+            accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) void importWord(file);
+            }}
+          />
         </div>
 
         {projects !== null && projects.length === 0 && (
@@ -153,7 +194,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
             <p>
               <b>No projects yet.</b>
             </p>
-            <p style={{ marginTop: 4 }}>Create one from a template, or import a ZIP from Overleaf or another editor.</p>
+            <p style={{ marginTop: 4 }}>Create one from a template, import a ZIP from Overleaf or another editor, or turn a Word file into a LaTeX project.</p>
           </div>
         )}
 
@@ -236,6 +277,16 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           onClose={() => setRestoring(false)}
           onRestored={(id) => {
             setRestoring(false);
+            props.onOpen(id);
+          }}
+        />
+      )}
+      {wordImport && (
+        <WordImportDialog
+          job={wordImport}
+          onClose={() => setWordImport(null)}
+          onOpen={(id) => {
+            setWordImport(null);
             props.onOpen(id);
           }}
         />
