@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { nextTheme, readTheme, saveTheme } from './theme';
+import { readAccent, saveAccent, nextTheme, readTheme, saveTheme } from './theme';
 
 describe('theme', () => {
-  afterEach(() => saveTheme('system'));
+  afterEach(() => {
+    saveTheme('system');
+    saveAccent('green');
+  });
 
   it('defaults to the system', () => {
     expect(readTheme()).toBe('system');
@@ -23,5 +26,21 @@ describe('theme', () => {
     expect(nextTheme('system')).toBe('light');
     expect(nextTheme('light')).toBe('dark');
     expect(nextTheme('dark')).toBe('system');
+  });
+
+  it('defaults to the green scheme and remembers another one', () => {
+    expect(readAccent()).toBe('green');
+    expect(document.documentElement.dataset.accent).toBeUndefined();
+    saveAccent('violet');
+    expect(readAccent()).toBe('violet');
+    expect(document.documentElement.dataset.accent).toBe('violet');
+    saveAccent('green');
+    expect(readAccent()).toBe('green');
+    expect(document.documentElement.dataset.accent).toBeUndefined();
+  });
+
+  it('ignores an unknown stored scheme', () => {
+    localStorage.setItem('scribetex:accent', 'plaid');
+    expect(readAccent()).toBe('green');
   });
 });
