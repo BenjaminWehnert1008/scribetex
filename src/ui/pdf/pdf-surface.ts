@@ -6,21 +6,8 @@
  * the document arrives, each page keeps showing its old picture until the new
  * one is drawn, so recompiling does not flicker and the scroll position stays.
  */
-import type * as PdfjsModule from 'pdfjs-dist';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-type Pdfjs = typeof PdfjsModule;
-
-let pdfjsPromise: Promise<Pdfjs> | null = null;
-
-function loadPdfjs(): Promise<Pdfjs> {
-  pdfjsPromise ??= import('pdfjs-dist').then((pdfjs) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    return pdfjs;
-  });
-  return pdfjsPromise;
-}
+import { loadPdfjs } from './pdfjs';
 
 export type Zoom = 'fit' | number;
 
@@ -48,23 +35,66 @@ export interface SurfaceInfo {
 
 interface Slot {
   el: HTMLDivElement;
+  /** Holds the canvas; replaced on every new drawing. */
+  art: HTMLDivElement;
+  /** Invisible text over the picture, so words can be selected. */
+  text: HTMLDivElement | null;
+  /** Comment and suggestion marks, positioned in percent of the page, so zooming needs no redraw. */
+  overlay: HTMLDivElement;
   /** Page size in PDF points. */
   width: number;
   height: number;
   renderedKey: string | null;
   task: RenderTask | null;
+  textTask: { cancel(): void } | null;
   near: boolean;
+}
+
+/** A comment or suggestion to mark on a page. */
+export interface SurfaceMark {
+  id: string;
+  page: number;
+  rects: PageRect[];
+  kind: 'comment' | 'suggestion';
+  /** Index into the review palette. */
+  color: number;
+  active: boolean;
+}
+
+/** What is selected in the PDF's text. */
+export interface SurfaceSelection {
+  page: number;
+  /** The selection on its first page, in PDF points. */
+  rects: PageRect[];
+  text: string;
+  /** Page points at the start and the end of the selection, for SyncTeX. */
+  start: PagePoint;
+  end: PagePoint;
+  /** Where the selection ends on screen, to place a toolbar. */
+  box: DOMRect;
+}
+
+/** A run of text on a page, in PDF points from the top left corner. */
+export interface PageTextRun {
+  str: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 const CSS_PIXELS_PER_POINT = 96 / 72;
 const SIDE_PADDING = 28;
 const MAX_CANVAS_PIXELS = 16_000_000;
+/** Screen pixels from one note in the margin to the next, so they do not overlap. */
+const PIN_SPACING = 21;
 export const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 export class PdfSurface {
   readonly #scroller: HTMLElement;
   readonly #host: HTMLElement;
   readonly #onInfo: (info: SurfaceInfo) => void;
+  readonly #onDrawFailed: (error: unknown) => void;
   readonly #observer: IntersectionObserver;
   readonly #resize: ResizeObserver;
   #doc: PDFDocumentProxy | null = null;
@@ -77,12 +107,20 @@ export class PdfSurface {
   #again = false;
   #disposed = false;
   #lastWidth = 0;
+  #marks: SurfaceMark[] = [];
+  #textCache = new Map<string, Promise<PageTextRun[]>>();
+  /** Settles when the document being loaded is shown. */
+  #shown: Promise<void> = Promise.resolve();
 
-  /** `scroller` scrolls; the page elements are added to `host`, which lies inside it. */
-  constructor(scroller: HTMLElement, host: HTMLElement, onInfo: (info: SurfaceInfo) => void) {
+  /**
+   * `scroller` scrolls; the page elements are added to `host`, which lies inside it.
+   * `onDrawFailed` hears of a page that could not be drawn and stays empty.
+   */
+  constructor(scroller: HTMLElement, host: HTMLElement, onInfo: (info: SurfaceInfo) => void, onDrawFailed: (error: unknown) => void = () => {}) {
     this.#scroller = scroller;
     this.#host = host;
     this.#onInfo = onInfo;
+    this.#onDrawFailed = onDrawFailed;
     this.#observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -92,7 +130,10 @@ export class PdfSurface {
           if (!slot.near && slot.renderedKey !== null) {
             // Far from view: give the pixel memory back.
             slot.task?.cancel();
-            slot.el.replaceChildren();
+            slot.textTask?.cancel();
+            slot.art.replaceChildren();
+            slot.text?.remove();
+            slot.text = null;
             slot.renderedKey = null;
           }
         }
@@ -110,7 +151,13 @@ export class PdfSurface {
   }
 
   /** Shows a new document, or a new version of the current one. */
-  async show(bytes: Uint8Array): Promise<void> {
+  show(bytes: Uint8Array): Promise<void> {
+    const shown = this.#show(bytes);
+    this.#shown = shown.catch(() => undefined);
+    return shown;
+  }
+
+  async #show(bytes: Uint8Array): Promise<void> {
     const version = ++this.#version;
     const pdfjs = await loadPdfjs();
     // pdf.js takes ownership of the buffer it is given, so it gets a copy.
@@ -137,6 +184,7 @@ export class PdfSurface {
     this.#doc = doc;
     this.#loading = loading;
     this.#docVersion = version;
+    this.#textCache.clear();
     for (const slot of this.#slots) slot.task?.cancel();
 
     while (this.#slots.length > sizes.length) {
@@ -149,9 +197,14 @@ export class PdfSurface {
       if (!slot) {
         const el = document.createElement('div');
         el.className = 'pdf-page';
-        el.setAttribute('role', 'img');
+        el.dataset.page = String(index + 1);
         el.setAttribute('aria-label', `Page ${index + 1}`);
-        slot = { el, width, height, renderedKey: null, task: null, near: false };
+        const art = document.createElement('div');
+        art.className = 'pdf-art';
+        const overlay = document.createElement('div');
+        overlay.className = 'pdf-overlay';
+        el.append(art, overlay);
+        slot = { el, art, text: null, overlay, width, height, renderedKey: null, task: null, textTask: null, near: false };
         this.#slots.push(slot);
         this.#host.append(el);
         this.#observer.observe(el);
@@ -160,6 +213,7 @@ export class PdfSurface {
       slot.height = height;
     });
     this.#layout();
+    this.#drawMarks();
     void previous?.destroy();
   }
 
@@ -261,12 +315,140 @@ export class PdfSurface {
     this.#resize.disconnect();
     for (const slot of this.#slots) {
       slot.task?.cancel();
+      slot.textTask?.cancel();
       slot.el.remove();
     }
     this.#slots = [];
     void this.#loading?.destroy();
     this.#loading = null;
     this.#doc = null;
+  }
+
+  // ---- text, selection and review marks ------------------------------------------
+
+  /** The text runs of a page with their places, read once per version of the document. */
+  async pageText(page: number): Promise<PageTextRun[]> {
+    // A document still loading is waited for, so marks are not placed on an empty page.
+    await this.#shown;
+    const doc = this.#doc;
+    if (!doc || page < 1 || page > doc.numPages) return Promise.resolve([]);
+    const key = `${this.#docVersion}:${page}`;
+    let cached = this.#textCache.get(key);
+    if (!cached) {
+      cached = (async () => {
+        const proxy = await doc.getPage(page);
+        const viewport = proxy.getViewport({ scale: 1 });
+        const content = await proxy.getTextContent();
+        const runs: PageTextRun[] = [];
+        for (const item of content.items) {
+          if (!('str' in item) || item.str === '' || item.width <= 0) continue;
+          const [x0, y0] = viewport.convertToViewportPoint(item.transform[4] as number, item.transform[5] as number) as [number, number];
+          const height = Math.max(item.height, Math.hypot(item.transform[2] as number, item.transform[3] as number));
+          runs.push({ str: item.str, left: x0, top: y0 - height * 0.85, right: x0 + item.width, bottom: y0 + height * 0.25 });
+        }
+        return runs;
+      })().catch(() => []);
+      this.#textCache.set(key, cached);
+    }
+    return cached;
+  }
+
+  /** Shows these marks, replacing the ones shown before. */
+  setMarks(marks: SurfaceMark[]): void {
+    this.#marks = marks;
+    this.#drawMarks();
+  }
+
+  /** The mark under a point on screen, if any; the active one wins. */
+  markAt(clientX: number, clientY: number): string | null {
+    const point = this.pointAt(clientX, clientY);
+    if (!point) return null;
+    const hits = this.#marks.filter(
+      (mark) => mark.page === point.page && mark.rects.some((rect) => point.x >= rect.left - 1 && point.x <= rect.right + 1 && point.y >= rect.top - 1 && point.y <= rect.bottom + 1),
+    );
+    return (hits.find((mark) => mark.active) ?? hits[0])?.id ?? null;
+  }
+
+  /** Where a mark is on screen now, to place a card next to it. */
+  markBox(id: string): DOMRect | null {
+    const element = this.#host.querySelector<HTMLElement>(`.pdf-rv[data-thread="${CSS.escape(id)}"]`);
+    return element?.getBoundingClientRect() ?? null;
+  }
+
+  /** Scrolls a mark into view, without the flash `reveal` makes. */
+  scrollToMark(id: string): boolean {
+    const mark = this.#marks.find((candidate) => candidate.id === id);
+    const slot = mark ? this.#slots[mark.page - 1] : undefined;
+    if (!mark || !slot || mark.rects.length === 0) return false;
+    const scale = this.#scale();
+    const top = Math.min(...mark.rects.map((rect) => rect.top));
+    const scroller = this.#scroller;
+    const pageTop = slot.el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({ top: Math.max(0, pageTop + top * scale - scroller.clientHeight / 3), behavior: smooth ? 'smooth' : 'auto' });
+    return true;
+  }
+
+  /** The current text selection inside the pages, or null. */
+  selection(): SurfaceSelection | null {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!this.#host.contains(range.commonAncestorContainer)) return null;
+    const text = selection.toString();
+    if (text.trim() === '') return null;
+    const clientRects = [...range.getClientRects()].filter((rect) => rect.width > 0.5 && rect.height > 0.5);
+    if (clientRects.length === 0) return null;
+    const first = clientRects[0]!;
+    const last = clientRects.at(-1)!;
+    const start = this.pointAt(first.left + 1, first.top + first.height / 2);
+    const end = this.pointAt(last.right - 1, last.top + last.height / 2);
+    if (!start || !end) return null;
+    const slot = this.#slots[start.page - 1]!;
+    const box = slot.el.getBoundingClientRect();
+    const scale = this.#scale();
+    const rects = mergeLines(
+      clientRects
+        .filter((rect) => rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1)
+        .map((rect) => ({ left: (rect.left - box.left) / scale, top: (rect.top - box.top) / scale, right: (rect.right - box.left) / scale, bottom: (rect.bottom - box.top) / scale })),
+    );
+    return { page: start.page, rects, text, start, end, box: last };
+  }
+
+  #drawMarks(): void {
+    for (const slot of this.#slots) slot.overlay.replaceChildren();
+    const scale = this.#scale();
+    // Notes in the margin that would overlap move down below the one above them.
+    const pinBottoms = new Map<number, number>();
+    const ordered = [...this.#marks].sort((a, b) => a.page - b.page || (a.rects[0]?.top ?? 0) - (b.rects[0]?.top ?? 0));
+    for (const mark of ordered) {
+      const slot = this.#slots[mark.page - 1];
+      if (!slot) continue;
+      mark.rects.forEach((rect, position) => {
+        const element = document.createElement('div');
+        element.className = `pdf-rv ${mark.kind}${mark.active ? ' active' : ''}`;
+        element.dataset.thread = mark.id;
+        element.style.setProperty('--rv', `var(--rv-${mark.color})`);
+        element.style.left = `${((rect.left - 1) / slot.width) * 100}%`;
+        element.style.top = `${((rect.top - 1) / slot.height) * 100}%`;
+        element.style.width = `${((rect.right - rect.left + 2) / slot.width) * 100}%`;
+        element.style.height = `${((rect.bottom - rect.top + 2) / slot.height) * 100}%`;
+        if (position === 0) element.classList.add('first');
+        slot.overlay.append(element);
+      });
+      // A small badge in the margin next to the first line, like a note in the margin of paper.
+      const first = mark.rects[0];
+      if (first) {
+        const pin = document.createElement('div');
+        pin.className = `pdf-rv-pin ${mark.kind}${mark.active ? ' active' : ''}`;
+        pin.dataset.thread = mark.id;
+        pin.style.setProperty('--rv', `var(--rv-${mark.color})`);
+        const top = Math.max(first.top, pinBottoms.get(mark.page) ?? -Infinity);
+        pinBottoms.set(mark.page, top + PIN_SPACING / scale);
+        pin.style.top = `${(top / slot.height) * 100}%`;
+        slot.overlay.append(pin);
+      }
+    }
   }
 
   /** CSS pixels per PDF point. */
@@ -287,7 +469,11 @@ export class PdfSurface {
     for (const slot of this.#slots) {
       slot.el.style.width = `${Math.floor(slot.width * scale)}px`;
       slot.el.style.height = `${Math.floor(slot.height * scale)}px`;
+      // pdf.js sizes its text layer from this.
+      slot.el.style.setProperty('--total-scale-factor', String(scale));
     }
+    // How far apart the notes in the margin must be depends on the zoom.
+    if (this.#marks.length > 0) this.#drawMarks();
     this.#report();
     void this.#pump();
   }
@@ -338,17 +524,65 @@ export class PdfSurface {
       await task.promise;
       if (slot.task === task) slot.task = null;
       if (this.#doc !== doc || this.#slots[index] !== slot || this.#disposed) return;
-      // Keep a mark that is fading out on top of the new picture.
-      const marks = [...slot.el.querySelectorAll('.pdf-mark')];
-      slot.el.replaceChildren(canvas, ...marks);
+      slot.art.replaceChildren(canvas);
       slot.renderedKey = key;
+      void this.#drawText(doc, slot, page, key);
     } catch (error) {
       slot.task = null;
       const cancelled = error instanceof Error && error.name === 'RenderingCancelledException';
       // A page that cannot be drawn is marked as done, so the loop does not retry it forever.
-      if (!cancelled && this.#doc === doc) slot.renderedKey = key;
+      if (!cancelled && this.#doc === doc) {
+        slot.renderedKey = key;
+        this.#onDrawFailed(error);
+      }
     }
   }
+
+  /** Lays the page's text over the picture, invisible, so it can be selected like in a PDF reader. */
+  async #drawText(doc: PDFDocumentProxy, slot: Slot, page: Awaited<ReturnType<PDFDocumentProxy['getPage']>>, key: string): Promise<void> {
+    slot.textTask?.cancel();
+    try {
+      const pdfjs = await loadPdfjs();
+      const container = document.createElement('div');
+      container.className = 'textLayer';
+      const layer = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container, viewport: page.getViewport({ scale: this.#scale() }) });
+      slot.textTask = layer;
+      await layer.render();
+      if (slot.textTask === layer) slot.textTask = null;
+      if (this.#doc !== doc || slot.renderedKey !== key || this.#disposed) return;
+      // While a selection is being made, this covers the gaps between the lines (see review.css).
+      const end = document.createElement('div');
+      end.className = 'endOfContent';
+      container.append(end);
+      container.addEventListener('mousedown', () => {
+        container.classList.add('selecting');
+        window.addEventListener('mouseup', () => container.classList.remove('selecting'), { once: true });
+      });
+      // A selection being made must not be lost because a page was redrawn.
+      if (slot.text && window.getSelection()?.containsNode(slot.text, true)) return;
+      slot.text?.remove();
+      slot.text = container;
+      slot.art.after(container);
+    } catch {
+      // Without its text layer a page can still be read; it just cannot be selected.
+    }
+  }
+}
+
+/** Joins rectangles that lie on the same line. */
+function mergeLines(rects: PageRect[]): PageRect[] {
+  const out: PageRect[] = [];
+  for (const rect of [...rects].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    const last = out.at(-1);
+    if (last && Math.abs(last.top - rect.top) < (rect.bottom - rect.top) * 0.5) {
+      last.left = Math.min(last.left, rect.left);
+      last.right = Math.max(last.right, rect.right);
+      last.bottom = Math.max(last.bottom, rect.bottom);
+    } else {
+      out.push({ ...rect });
+    }
+  }
+  return out;
 }
 
 /** The word of `text` around index `at`, without surrounding punctuation. */

@@ -4,12 +4,14 @@
  *   favicon.svg    the typewriter on a 16 x 16 grid, for the browser tab
  *   favicon-32.png and apple-touch-icon.png, the same as PNG for browsers
  *                  that skip SVG icons (Safari) and for phone home screens
- *   logo-mark.svg  the typewriter on a 24 x 24 grid, for the top bar
+ *   logo-mark.svg  the typewriter on a 24 x 24 grid, on its own (the app's top
+ *                  bar draws it inline: PixelMark in src/ui/home/PixelLogo.tsx)
  *   logo.svg       the typewriter and the word "scribeTeX" (README, home page)
  * The favicon, logo-mark.svg and logo.svg follow the system's dark mode on
  * their own. Inside the app the logo is drawn inline from the same pixel data
  * (src/ui/home/PixelLogo.tsx), so it also follows the app's mode switch and
- * colour scheme.
+ * colour scheme; its colours are the --logo-* tokens in src/styles/tokens.css,
+ * whose green values must stay those of logo-pixels.json.
  * Every pixel is one unit of the SVG's viewBox, so the files stay sharp at any
  * whole-number scale. Edit the grids in src/app/logo-pixels.json and run `npm run logo`; the
  * home page draws its typing animation from the same file.

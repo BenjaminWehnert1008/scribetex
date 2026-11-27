@@ -34,6 +34,17 @@ export interface FolderLink {
   writePdf: boolean;
 }
 
+/** Set on a project that is someone else's document opened from a review copy, to comment on. */
+export interface ReviewCopyMeta {
+  reviewId: string;
+  /** Who sent it, as their name and colour appear on their comments. */
+  from: { id: string; name: string; color: number };
+  /** The project's name on the sender's computer. */
+  project: string;
+  sentAt: Millis;
+  receivedAt: Millis;
+}
+
 export interface ProjectMeta {
   id: ProjectId;
   name: string;
@@ -54,6 +65,8 @@ export interface ProjectMeta {
   /** Denormalized totals for the project list. */
   fileCount: number;
   totalBytes: number;
+  /** Present when this is a review copy of someone else's project; it can be commented on, not edited. */
+  reviewCopy?: ReviewCopyMeta | null;
 }
 
 export type EntryKind = 'file' | 'dir';

@@ -1,8 +1,17 @@
 import { Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react';
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { reportError } from '@/app/services';
+import { PreviewTrouble } from './BrowserAdvice';
 import { downloadBytes } from '../common/ui';
-import { PdfSurface, type PagePoint, type PageRect, type SurfaceInfo } from './pdf-surface';
+import { type PageTextRun, PdfSurface, type PagePoint, type PageRect, type SurfaceInfo, type SurfaceMark, type SurfaceSelection } from './pdf-surface';
+
+/** What the rest of the workspace may ask of the PDF on screen. */
+export interface PdfApi {
+  pageText(page: number): Promise<PageTextRun[]>;
+  markBox(id: string): DOMRect | null;
+  scrollToMark(id: string): boolean;
+  clearSelection(): void;
+}
 
 export interface PdfViewProps {
   pdf: Uint8Array | null;
@@ -20,6 +29,14 @@ export interface PdfViewProps {
   onShowCursor?: () => void;
   /** A place to scroll to and mark; a new object each time, also for the same place. */
   reveal?: { page: number; rects: PageRect[] } | null;
+  /** Comments and suggestions to mark on the pages. */
+  marks?: SurfaceMark[];
+  /** Text was selected in the PDF (null: the selection went away). */
+  onSelectText?: (selection: SurfaceSelection | null) => void;
+  /** A comment or suggestion mark was clicked. */
+  onMarkClick?: (id: string) => void;
+  /** Filled with the PDF's abilities while it is shown. */
+  apiRef?: RefObject<PdfApi | null>;
 }
 
 export function PdfView(props: PdfViewProps) {
@@ -27,26 +44,77 @@ export function PdfView(props: PdfViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<PdfSurface | null>(null);
   const [info, setInfo] = useState<SurfaceInfo>({ pages: 0, scale: 1, zoom: 'fit' });
+  /** A page of the current PDF could not be drawn, or the PDF could not be opened. */
+  const [trouble, setTrouble] = useState(false);
   const { pdf, version } = props;
 
+  const { apiRef } = props;
   useEffect(() => {
     if (!scroller.current || !host.current) return;
-    const created = new PdfSurface(scroller.current, host.current, setInfo);
+    const created = new PdfSurface(scroller.current, host.current, setInfo, (error) => {
+      console.warn('A page of the PDF could not be drawn:', error);
+      setTrouble(true);
+    });
     surface.current = created;
+    if (apiRef) {
+      apiRef.current = {
+        pageText: (page) => created.pageText(page),
+        markBox: (id) => created.markBox(id),
+        scrollToMark: (id) => created.scrollToMark(id),
+        clearSelection: () => {
+          const selection = window.getSelection();
+          if (selection && !selection.isCollapsed && host.current?.contains(selection.anchorNode)) selection.removeAllRanges();
+        },
+      };
+    }
     return () => {
       created.dispose();
       surface.current = null;
+      if (apiRef) apiRef.current = null;
+    };
+  }, [apiRef]);
+
+  const { marks } = props;
+  useEffect(() => {
+    surface.current?.setMarks(marks ?? []);
+  }, [marks]);
+
+  // On a touch screen a selection is made and adjusted with handles, without a mouseup:
+  // it is reported once it has stopped changing.
+  const touching = useRef(false);
+  const selectText = useRef(props.onSelectText);
+  useEffect(() => {
+    selectText.current = props.onSelectText;
+  });
+  useEffect(() => {
+    let timer = 0;
+    const onChange = (): void => {
+      if (!touching.current || !selectText.current) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const selected = surface.current?.selection() ?? null;
+        if (selected) selectText.current?.(selected);
+      }, 450);
+    };
+    document.addEventListener('selectionchange', onChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('selectionchange', onChange);
     };
   }, []);
 
   useEffect(() => {
     const current = surface.current;
     if (!current) return;
+    setTrouble(false);
     if (!pdf) {
       current.clear();
       return;
     }
-    current.show(pdf).catch((error: unknown) => reportError(error, 'The PDF could not be displayed'));
+    current.show(pdf).catch((error: unknown) => {
+      setTrouble(true);
+      reportError(error, 'The PDF could not be displayed');
+    });
   }, [pdf, version]);
 
   const { reveal } = props;
@@ -55,7 +123,17 @@ export function PdfView(props: PdfViewProps) {
   }, [reveal]);
 
   const findSource = props.onFindSource;
+  const { onSelectText, onMarkClick } = props;
   const onPagePointer = (event: MouseEvent<HTMLDivElement>, how: 'double' | 'single'): void => {
+    if (how === 'double') onSelectText?.(null);
+    if (how === 'single' && !(event.ctrlKey || event.metaKey) && onMarkClick && surface.current) {
+      // A click on a comment's mark opens it, unless the click ended a selection.
+      if (!window.getSelection()?.isCollapsed) return;
+      const pinned = (event.target as HTMLElement).closest<HTMLElement>('[data-thread]')?.dataset.thread;
+      const id = pinned ?? surface.current.markAt(event.clientX, event.clientY);
+      if (id) onMarkClick(id);
+      return;
+    }
     if (!findSource || !surface.current) return;
     if (how === 'single' && !(event.ctrlKey || event.metaKey)) return;
     const point = surface.current.pointAt(event.clientX, event.clientY);
@@ -108,10 +186,22 @@ export function PdfView(props: PdfViewProps) {
         ref={scroller}
         tabIndex={0}
         aria-label="PDF preview"
+        onPointerDown={(event) => {
+          touching.current = event.pointerType !== 'mouse';
+        }}
         onDoubleClick={(event) => onPagePointer(event, 'double')}
         onClick={(event) => onPagePointer(event, 'single')}
+        onMouseUp={(event) => {
+          // The second click of a double-click jumps to the source; it selects a word only by accident.
+          if (!onSelectText || event.detail >= 2 || event.button !== 0) return;
+          requestAnimationFrame(() => onSelectText(surface.current?.selection() ?? null));
+        }}
+        onKeyUp={(event) => {
+          if (onSelectText && event.shiftKey) onSelectText(surface.current?.selection() ?? null);
+        }}
       >
         {!pdf && <div className="pdf-empty">{props.empty}</div>}
+        {pdf && trouble && <PreviewTrouble />}
         <div ref={host} />
       </div>
     </>

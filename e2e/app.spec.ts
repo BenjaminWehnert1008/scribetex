@@ -38,6 +38,44 @@ async function typeInEditor(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text);
 }
 
+/** Selects `words` with the mouse, in the text under `root` (the source editor or the PDF's text). */
+async function selectWords(page: Page, root: string, words: string): Promise<void> {
+  const find = ({ root, words, scroll }: { root: string; words: string; scroll: boolean }) => {
+    const nodes: Text[] = [];
+    for (const element of document.querySelectorAll(root)) {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+    }
+    const places: [Text, number][] = [];
+    let joined = '';
+    for (const node of nodes) {
+      for (let index = 0; index < node.data.length; index++) places.push([node, index]);
+      joined += node.data;
+    }
+    const at = joined.indexOf(words);
+    if (at < 0) return null;
+    // Words below the fold are scrolled into view first; a drag only selects what can be seen.
+    if (scroll) places[at]![0].parentElement?.scrollIntoView({ block: 'center' });
+    const rectOf = ([node, index]: [Text, number]): DOMRect => {
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 1);
+      return range.getBoundingClientRect();
+    };
+    const first = rectOf(places[at]!);
+    const last = rectOf(places[at + words.length - 1]!);
+    return { x1: first.left + 0.5, y1: first.top + first.height / 2, x2: last.right - 0.5, y2: last.top + last.height / 2 };
+  };
+  await page.evaluate(find, { root, words, scroll: true });
+  await page.waitForTimeout(150);
+  const box = await page.evaluate(find, { root, words, scroll: false });
+  if (!box) throw new Error(`"${words}" was not found in ${root}`);
+  await page.mouse.move(box.x1, box.y1);
+  await page.mouse.down();
+  await page.mouse.move(box.x2, box.y2, { steps: 6 });
+  await page.mouse.up();
+}
+
 const tree = (page: Page) => page.getByRole('tree', { name: 'Project files' });
 const row = (page: Page, name: string) => tree(page).getByRole('treeitem', { name, exact: true });
 const panel = (page: Page, name: string) => page.getByRole('navigation', { name: 'Side panels' }).getByRole('button', { name, exact: true });
@@ -55,6 +93,51 @@ test('tells a new visitor where the work is saved', async ({ page }) => {
   await expect(notice).toBeVisible();
 });
 
+test('suggests Chrome or Edge and guides through the GitHub setup where folders cannot be used', async ({ page }) => {
+  // Safari and Firefox have no folder picker; removing it here shows what they show.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });
+  });
+  await page.goto('./');
+  const notice = page.getByRole('dialog', { name: 'Where your work is saved' });
+  await expect(notice).toContainText('Tip: for saving to a folder, open scribeTeX in Chrome or Edge.');
+  await expect(notice).toContainText('equally safe');
+  await expect(notice.getByRole('link', { name: 'Get Chrome' })).toHaveAttribute('href', 'https://www.google.com/chrome/');
+  await notice.getByRole('button', { name: 'Show me how, step by step' }).click();
+
+  const guide = page.getByRole('dialog', { name: 'Set up a GitHub backup, step by step' });
+  await expect(guide.getByRole('link', { name: 'Sign up on GitHub' })).toHaveAttribute('href', 'https://github.com/signup');
+  const forms = guide.getByRole('link', { name: 'Open the form, already filled in' });
+  await expect(forms.first()).toHaveAttribute('href', /^https:\/\/github\.com\/new\?.*visibility=private/);
+  await expect(forms.nth(1)).toHaveAttribute('href', /^https:\/\/github\.com\/settings\/personal-access-tokens\/new\?.*contents=write/);
+  await guide.getByRole('button', { name: 'Got it' }).click();
+  await expect(guide).toBeHidden();
+
+  // The first-visit notice counts as seen; the home screen keeps the tip and the guide.
+  await page.reload();
+  await expect(notice).toBeHidden();
+  await page.getByRole('note').getByRole('button', { name: 'Show me how, step by step' }).click();
+  await expect(guide).toBeVisible();
+});
+
+test('shows a picture of every built-in template when a project is started', async ({ page }) => {
+  await start(page);
+  await page.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
+  const cards = dialog.locator('button.template');
+  await expect(cards.first()).toBeVisible();
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(4);
+  // Blank shows an empty page; every other template a picture of its first page.
+  await expect(cards.filter({ hasText: 'Blank' }).locator('.empty-page')).toBeVisible();
+  const pictures = dialog.locator('button.template .template-preview > img');
+  await expect(pictures).toHaveCount(count - 1);
+  await expect.poll(() => pictures.evaluateAll((images) => images.filter((image) => (image as HTMLImageElement).naturalWidth > 0).length)).toBe(count - 1);
+  await expect(dialog.locator('.template-detail')).toHaveText('An empty document and an images folder.');
+  await cards.filter({ hasText: 'Thesis' }).click();
+  await expect(dialog.locator('.template-detail')).toHaveText('Chapters, front matter, appendix, images and a bibliography.');
+});
+
 test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await start(page);
   const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
@@ -64,8 +147,9 @@ test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await page.getByRole('menuitemradio', { name: 'Rose' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
   expect(await accent()).not.toBe(green);
-  const body = page.locator('.topbar-mark path').first();
-  await expect(body).toBeVisible();
+  // The typewriter's body takes the scheme's colour; its outline stays as it is.
+  const body = page.locator('.topbar-mark path[style*="--logo-G"]');
+  await expect(body).toHaveCSS('fill', 'rgb(168, 50, 79)');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
   await page.getByRole('button', { name: 'Colour scheme: Rose' }).click();
@@ -73,6 +157,37 @@ test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await page.getByRole('menuitemradio', { name: 'Green' }).click();
   await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
   expect(await accent()).toBe(green);
+  await expect(body).toHaveCSS('fill', 'rgb(23, 113, 91)');
+});
+
+test('opens the colour scheme menu above its button at the end of the home page', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await start(page);
+  await page.locator('.home').evaluate((home) => home.scrollTo(0, home.scrollHeight));
+  const button = page.getByRole('button', { name: 'Colour scheme: Green' });
+  await button.click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  // There is no room below, so the menu opens above instead of over the button ...
+  const [buttonBox, menuBox] = [(await button.boundingBox())!, (await menu.boundingBox())!];
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(buttonBox.y);
+  await expect(menu.getByRole('menuitemradio', { name: 'Blue' })).toHaveCSS('font-size', '14px');
+  // ... and a second click on the button does not choose a scheme.
+  await button.click();
+  await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
+});
+
+test('types on a typewriter while the first PDF is being prepared', async ({ page }) => {
+  // The engine's files never arrive, so the first compile stays at loading the engine.
+  await page.route((url) => url.pathname.startsWith('/engine/'), () => undefined);
+  await start(page);
+  await createProject(page, 'Waiting', 'Blank');
+  await expect(page.getByText('Preparing the first PDF')).toBeVisible();
+  await expect(page.getByText(/The first compile loads the LaTeX engine/)).toBeVisible();
+  const typewriter = page.locator('.paper-pile');
+  await expect(typewriter).toBeVisible();
+  const before = await typewriter.innerHTML();
+  await expect.poll(() => typewriter.innerHTML()).not.toBe(before);
 });
 
 test('keeps nested folders and text across a reload', async ({ page }) => {
@@ -196,6 +311,42 @@ test('opens a project read-only in a second tab until it is taken over', async (
   await second.getByRole('button', { name: 'Edit here instead' }).click();
   await expect(second.getByText('open for editing in another tab')).toBeHidden();
   await expect(page.getByText('open for editing in another tab')).toBeVisible();
+});
+
+test('keeps a comment on its words while the text around them changes', async ({ page }) => {
+  await start(page);
+  await createProject(page, 'Commented', 'Blank');
+  await row(page, 'main.tex').click();
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText('The results were clearly better than expected.');
+  await panel(page, 'Review').click();
+
+  await selectWords(page, '.cm-content', 'clearly better');
+  await page.getByRole('toolbar', { name: 'Comment on the selection' }).getByRole('button', { name: 'Comment' }).click();
+  const name = page.getByRole('dialog', { name: 'Your name' });
+  await name.getByLabel('Name').fill('Anna Schmidt');
+  await name.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('dialog', { name: 'New comment' }).getByLabel('Comment').fill('By how much?');
+  await page.keyboard.press('Enter');
+  const card = page.locator('.rv-card', { hasText: 'By how much?' });
+  await expect(card).toContainText('Anna Schmidt');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+
+  // Text typed before the comment does not move it off its words, also after a reload.
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+Home');
+  await page.keyboard.type('In short: ');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+  await expect(page.locator('.save-chip')).toHaveText('Saved in this browser only');
+  await page.reload();
+  await panel(page, 'Review').click();
+  await expect(page.locator('.cm-content')).toContainText('In short: The results');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+  await card.getByRole('button', { name: 'Resolve' }).click();
+  await expect(page.locator('.cm-rv-comment')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Done/ }).click();
+  await expect(card).toContainText('Resolved');
 });
 
 test('links a project to a folder and keeps both in step', async ({ playwright, baseURL }, testInfo) => {
@@ -382,6 +533,44 @@ test.describe('with the LaTeX engine', () => {
     expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('How');
   });
 
+  test('compiles again from the precompiled preamble with the same pages and jumps', async ({ page }) => {
+    await start(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await createProject(page, 'Again', 'Report');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await page.locator('.statusbar button').first().click();
+    await page.getByRole('tab', { name: 'Full log' }).click();
+    const log = page.locator('pre.log');
+    await expect(log).toContainText('preloaded format=pdflatex');
+
+    // While it waits after the second compile, the engine makes a format of
+    // the preamble and checks it. The compile after that loads it, and its
+    // log names that format (main, after main.tex) in the first line.
+    await row(page, 'main.tex').click();
+    await expect(async () => {
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('ControlOrMeta+Enter');
+      await expect(log).toContainText('preloaded format=main', { timeout: 15_000 });
+    }).toPass({ timeout: 180_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await expect(page.locator('.statusbar')).toContainText('No problems');
+    await expect(page.locator('.pdf-bar')).toContainText('6 pages');
+
+    // The SyncTeX data of that compile still leads from the source to the PDF and back.
+    await row(page, 'methods.tex').click();
+    await page.locator('.cm-line').nth(3).click();
+    await page.getByRole('button', { name: 'Show the cursor position in the PDF' }).click();
+    const mark = page.locator('.pdf-mark').first();
+    await expect(mark).toBeVisible();
+    const box = (await mark.boundingBox())!;
+    await row(page, 'main.tex').click();
+    await expect(page.locator('.tab[aria-selected=true]')).toContainText('main.tex');
+    await page.mouse.dblclick(box.x + 12, box.y + box.height / 2);
+    await expect(page.locator('.statusbar')).toContainText('Line 4, column 4');
+    await expect(page.locator('.cm-content')).toContainText('How the work was done.');
+  });
+
   test('shows an error with its file and line, and keeps the last good PDF', async ({ page }) => {
     await start(page);
     await createProject(page, 'Broken', 'Article');
@@ -479,6 +668,9 @@ test.describe('with the LaTeX engine', () => {
     ['Thesis', 16],
     ['Project Proposal', 3],
     ['CV', 1],
+    ['Article', 1],
+    ['Report', 6],
+    ['Slides', 2],
   ] as const) {
     test(`compiles the ${template} template without errors`, async ({ page }) => {
       await start(page);
@@ -489,6 +681,84 @@ test.describe('with the LaTeX engine', () => {
       await expect(page.locator('.pdf-bar')).toContainText(`${pages} page`);
     });
   }
+
+  test('sends a review copy, takes the comments back and accepts a suggestion', async ({ page, browser, baseURL }, testInfo) => {
+    await start(page);
+    await createProject(page, 'For review', 'Article');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await panel(page, 'Review').click();
+    await page.getByRole('button', { name: 'Send for review' }).click();
+    const name = page.getByRole('dialog', { name: 'Your name' });
+    await name.getByLabel('Name').fill('Benni');
+    await name.getByRole('button', { name: 'Continue' }).click();
+    const send = page.getByRole('dialog', { name: 'Send for review' });
+    const sent = page.waitForEvent('download');
+    await send.getByRole('button', { name: 'Download review copy' }).click();
+    const copy = testInfo.outputPath('copy.scribetex');
+    await (await sent).saveAs(copy);
+    await send.getByRole('button', { name: 'Close' }).click();
+
+    // The supervisor, in a browser of their own, comments on the PDF without any LaTeX.
+    const other = await browser.newContext({ baseURL });
+    const reviewer = await other.newPage();
+    await start(reviewer);
+    await reviewer.locator('input[type=file][accept=".scribetex"]').setInputFiles(copy);
+    await expect(reviewer.locator('.topbar .title')).toHaveText('For review (review)');
+    await expect(reviewer.getByText('Review copy of')).toBeVisible();
+    await expect(reviewer.locator('.pdf-page .textLayer span').first()).toBeAttached();
+    const bar = reviewer.getByRole('toolbar', { name: 'Comment on the selection' });
+    await selectWords(reviewer, '.pdf-page .textLayer', 'Start writing here');
+    await bar.getByRole('button', { name: 'Comment' }).click();
+    const reviewerName = reviewer.getByRole('dialog', { name: 'Your name' });
+    await reviewerName.getByLabel('Name').fill('Prof. Weber');
+    await reviewerName.getByRole('button', { name: 'Continue' }).click();
+    await reviewer.getByRole('dialog', { name: 'New comment' }).getByLabel('Comment').fill('Please add a motivation first.');
+    await reviewer.keyboard.press('Enter');
+    await expect(reviewer.locator('.cm-rv-comment')).toHaveText('Start writing here');
+
+    // In Suggesting mode, typing over words of the source starts a suggestion; the copy itself does not change.
+    await reviewer.getByRole('radio', { name: 'Suggesting' }).first().click();
+    await selectWords(reviewer, '.cm-content', 'referenced by its label');
+    await reviewer.keyboard.type('n');
+    const typed = reviewer.getByRole('dialog', { name: 'Suggest a change' });
+    await expect(typed.getByLabel('Suggested text')).toHaveValue('n');
+    await reviewer.keyboard.press('Escape');
+    await expect(typed).toBeHidden();
+    await expect(reviewer.locator('.cm-content')).toContainText('is referenced by its label');
+
+    await selectWords(reviewer, '.pdf-page .textLayer', 'short summary');
+    await bar.getByRole('button', { name: 'Suggest a change' }).click();
+    const suggest = reviewer.getByRole('dialog', { name: 'Suggest a change' });
+    await expect(suggest.getByLabel('Suggested text')).toHaveValue('short summary');
+    await suggest.getByLabel('Suggested text').fill('brief summary');
+    await reviewer.keyboard.press('Enter');
+    await expect(reviewer.locator('.cm-rv-del')).toHaveText('short');
+    await expect(reviewer.locator('.cm-rv-ins')).toHaveText('brief');
+    await expect(reviewer.locator('.pdf-rv-pin')).toHaveCount(2);
+
+    await reviewer.getByRole('button', { name: 'Send comments back' }).first().click();
+    const back = reviewer.getByRole('dialog', { name: 'Send your comments back' });
+    const returned = reviewer.waitForEvent('download');
+    await back.getByRole('button', { name: 'Download comments' }).click();
+    const comments = testInfo.outputPath('comments.scribetex');
+    await (await returned).saveAs(comments);
+    await other.close();
+
+    // The author takes them in: each shows where it was made, and the suggestion can be accepted.
+    await page.locator('input[type=file][accept=".scribetex"]').setInputFiles(comments);
+    await expect(page.getByText('2 new comments and suggestions from Prof. Weber added.')).toBeVisible();
+    await expect(page.locator('.rv-card')).toHaveCount(2);
+    await expect(page.locator('.cm-rv-comment')).toHaveText('Start writing here');
+    await expect(page.locator('.pdf-rv-pin')).toHaveCount(2);
+    await page.locator('.rv-card', { hasText: 'brief' }).getByRole('button', { name: 'Accept' }).click();
+    await expect(page.locator('.cm-content')).toContainText('A brief summary of the article.');
+    await expect(page.locator('.rv-card')).toHaveCount(1);
+
+    // The same file again adds nothing.
+    await page.locator('input[type=file][accept=".scribetex"]').setInputFiles(comments);
+    await expect(page.getByText('Nothing new: everything in this file was already here.')).toBeVisible();
+  });
 
   // The community templates need packages that only the full engine build has
   // (engine/extra-packages.txt); without them, a template is skipped here.
@@ -518,4 +788,54 @@ test.describe('with the LaTeX engine', () => {
       await expect(status).not.toContainText(/\b[1-9]\d* errors?\b/);
     });
   }
+});
+
+test.describe('in browsers of different ages', () => {
+  test('shows no update tip in an up-to-date browser', async ({ page }) => {
+    await start(page);
+    await createProject(page, 'Up to date', 'Blank');
+    await expect(page.locator('.cm-content')).toBeVisible();
+    await expect(page.getByText('a few updates behind')).toHaveCount(0);
+  });
+
+  test.describe('a few updates behind', () => {
+    // Safari before 26.2 lacks some of these features, and older versions lack
+    // all of them. Removing them shows what such a browser gets: the legacy
+    // build of pdf.js (src/ui/pdf/pdfjs.ts) and a tip to update.
+    const remove = [
+      'for (const C of [Map, WeakMap]) { delete C.prototype.getOrInsert; delete C.prototype.getOrInsertComputed; }',
+      'delete Math.sumPrecise; delete Promise.try; delete URL.parse; delete globalThis.Iterator;',
+      'for (const name of ["fromBase64", "fromHex"]) delete Uint8Array[name];',
+      'for (const name of ["toBase64", "toHex", "setFromBase64", "setFromHex"]) delete Uint8Array.prototype[name];',
+      'for (const name of ["union", "intersection", "difference", "symmetricDifference", "isSubsetOf", "isSupersetOf", "isDisjointFrom"]) delete Set.prototype[name];',
+    ].join('\n');
+    test.use({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15' });
+
+    test('draws the PDF all the same and suggests updating Safari', async ({ page }) => {
+      test.skip(!engineReady, 'run "npm run engine:prepare" and build first');
+      test.setTimeout(300_000);
+      await page.addInitScript(remove);
+      // The worker of pdf.js runs on its own, so it loses the features too.
+      await page.route(/pdf\.worker[^/]*\.mjs/, async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: `${remove}\n${await response.text()}` });
+      });
+      await start(page);
+      await createProject(page, 'Older Safari', 'CV');
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(page.locator('.pdf-trouble')).toHaveCount(0);
+
+      const tip = page.getByRole('status').filter({ hasText: 'this version of Safari is a few updates behind' });
+      await expect(tip).toContainText('update Safari or open scribeTeX in Chrome or Edge');
+      await expect(tip.getByRole('link', { name: 'Get Chrome' })).toHaveAttribute('href', 'https://www.google.com/chrome/');
+      await tip.getByRole('button', { name: 'Dismiss the tip' }).click();
+      await expect(tip).toBeHidden();
+
+      // Dismissed for good: not shown again after a reload.
+      await page.reload();
+      await expect(page.locator('.topbar .title')).toHaveText('Older Safari');
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(tip).toHaveCount(0);
+    });
+  });
 });

@@ -29,6 +29,8 @@ interface SiglumLike {
   terminate(): void;
   unload(): void;
   bundleManager?: { bytesDownloaded?: number };
+  /** Precompiles the preamble of a single-file document into a format. Replaced, see `#create`. */
+  generateFormat?: (source: string, options?: Record<string, unknown>) => Promise<unknown>;
 }
 
 type SiglumResult = Awaited<ReturnType<SiglumLike['compile']>>;
@@ -119,6 +121,10 @@ export class SiglumEngine implements EngineClient {
     const compiler = this.#options.createCompiler
       ? await this.#options.createCompiler(options)
       : await importSiglum(options);
+    // Our worker makes and checks the preamble formats itself (see
+    // scripts/engine-prepare.mjs) and ignores the ones the compiler sends, so
+    // the compiler's own format run after each compile would only cost time.
+    compiler.generateFormat = () => Promise.resolve(null);
     await compiler.init();
     this.#compiler = compiler;
     this.#status.patch({ phase: 'ready', detail: null });

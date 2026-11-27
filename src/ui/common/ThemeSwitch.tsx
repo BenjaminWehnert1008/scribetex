@@ -27,21 +27,21 @@ export function ThemeSwitch(props: { withLabel?: boolean }) {
 }
 
 /** A button that opens the list of colour schemes (green, blue, ..., black and white). */
-export function AccentSwitch(props: { withLabel?: boolean }) {
+export function AccentSwitch(props: { withLabel?: boolean; className?: string }) {
   const [choice, setChoice] = useState<AccentChoice>(readAccent);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number } | null>(null);
   const current = ACCENTS.find((accent) => accent.id === choice) ?? ACCENTS[0];
   return (
     <>
       <button
-        className={props.withLabel ? 'theme-switch' : 'icon-btn'}
+        className={[props.withLabel ? 'theme-switch' : 'icon-btn', props.className].filter(Boolean).join(' ')}
         title={`Colour scheme: ${current.label}`}
         aria-label={`Colour scheme: ${current.label}`}
         aria-haspopup="menu"
         aria-expanded={menu !== null}
         onClick={(event) => {
           const box = event.currentTarget.getBoundingClientRect();
-          setMenu({ x: props.withLabel ? box.left : box.right - 200, y: box.bottom + 4 });
+          setMenu({ x: props.withLabel ? box.left : box.right - 200, y: box.bottom + 4, above: box.top });
         }}
       >
         <Palette size={props.withLabel ? 13 : 16} />
@@ -51,6 +51,7 @@ export function AccentSwitch(props: { withLabel?: boolean }) {
         <Menu
           x={menu.x}
           y={menu.y}
+          above={menu.above}
           onClose={() => setMenu(null)}
           items={ACCENTS.map((accent) => ({
             label: accent.label,

@@ -16,8 +16,10 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
 - Projects with nested folders, drag and drop, upload of files and whole folders.
 - Starting points for a new project: Blank, Thesis, Project Proposal and CV,
   each with lorem ipsum text and a folder layout (chapters or sections,
-  `images/`, `bibliography/`, settings), plus Article, Report and Slides. They
-  live in `src/templates/`; pictures in them are drawn in code.
+  `images/`, `bibliography/`, settings), plus Article, Report and Slides. All
+  print in black and white except the CV, which has colour accents. The
+  new-project dialog shows a picture of each one's first page. They live in
+  `src/templates/`; pictures in them are drawn in code.
 - Templates from the community: resumes, papers, notes and slides by other
   authors under open licenses, each tested with the compiler here and shown
   with its author, license and source. See `community-templates/README.md`.
@@ -38,6 +40,8 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
   be converted is listed after the import and at the top of `main.tex`. The
   converter is in `src/core/docx/`.
 - Saving that is built so that work is not lost. See the next section.
+- **Comments and suggestions**, on the source and on the PDF, for a
+  supervisor who does not know LaTeX. See below.
 - **Ask Claude**, from the top bar or next to any problem. See below.
 
 ## Where the work is saved
@@ -82,6 +86,30 @@ the user creates and that is stored in that browser only. To set it up:
 Each backup is one commit. "Restore from GitHub" on the start page brings a
 project back on another computer.
 
+## Comments and suggestions
+
+Select words in the source or in the PDF and choose **Comment** or **Suggest a
+change**. A comment is highlighted in both places, in the colour of the person
+who wrote it, and stays on its words while the text around them changes. In
+**Suggesting** mode, typing over a selection makes a suggestion instead of a
+change: the old words are struck through, the new ones shown after them, and
+the author accepts or rejects each one (or all at once).
+
+Reviewing needs no account and no server. **Send for review** downloads a
+review copy (a `.scribetex` file with the PDF, the text and the comments so
+far). The supervisor opens it on the site, comments and suggests on the PDF,
+and sends back the file that **Send comments back** gives them. Dropped into
+the project, every comment lands where it was made, also when the text has
+changed in the meantime. Files from several people can be added in any order;
+nothing is added twice.
+
+A suggestion made on the PDF becomes an exact edit of the source when the
+changed words are plain text there. When they touch a command, a brace or
+maths that would need LaTeX, it is kept as a note to make by hand.
+
+Under the hood the text and the comments are [Yjs](https://github.com/yjs/yjs)
+documents (`src/core/review`), so editing together live can be added later.
+
 ## Ask Claude
 
 scribeTeX has no assistant of its own and never talks to Claude itself. The
@@ -116,12 +144,25 @@ characters, so scribeTeX keeps questions under 12,000.
 - The first compile downloads the engine, tens of megabytes. After that the
   browser has it cached. A document that uses T1 encoding without a font
   package (such as `lmodern`) loads another 60 MB of fonts once.
+- The first compile of a document takes a few seconds. From the third one on,
+  the engine loads the preamble (everything before `\begin{document}`) from a
+  copy it made in between and checked against a normal compile, so a change
+  in the body compiles in about half a second. A change in the preamble makes
+  the next compile or two slower again; when the change is in the main file,
+  the next compile starts over like the first one, without the old `.aux`
+  files.
 - Jumping from the PDF lands on the line TeX was reading. For text set by
   a macro after the fact (a whole `align` block, a heading made by a class),
   that is the line where the environment or command ended. The table of
   contents does not lead anywhere.
 - The LaTeX packages are the ones built into the site. The list is the base
   tree plus `engine/extra-packages.txt`.
+- The PDF preview is drawn by pdf.js. Its modern build needs the newest
+  JavaScript features, which Safari has all of only since version 26.2. A
+  browser that lacks one gets pdf.js's legacy build, which brings its own
+  copies, and a tip to update or to use Chrome or Edge (`src/ui/pdf/pdfjs.ts`).
+  The legacy build still needs Safari 17.4 or newer. In older versions the
+  preview says that it cannot draw the PDF, which can still be downloaded.
 
 ## Working on it
 
@@ -151,7 +192,10 @@ The browser tests that compile a document are skipped when the engine has not
 been prepared.
 
 The community templates are refreshed with `npm run templates` (see
-`community-templates/README.md`).
+`community-templates/README.md`). After changing a built-in template, run
+`npm run previews` to draw its picture for the new-project dialog again
+(`src/templates/previews/`); it needs `pdflatex` (TeX Live or TinyTeX) and
+`pdftoppm` (poppler), and a unit test fails while a picture is out of date.
 
 ### Layout of the code
 
@@ -160,7 +204,8 @@ The community templates are refreshed with `npm run templates` (see
 | `src/core` | Everything without a user interface: storage, saving, folder sync, GitHub backup, the compile queue, the log parser. Unit tested. |
 | `src/app` | Wires the core to one open project. |
 | `src/ui` | The React screens. |
-| `engine`, `scripts` | How `public/engine` is assembled. |
+| `src/templates` | The built-in templates, and the pictures of their first pages in `previews/`. |
+| `engine`, `scripts` | How `public/engine` is assembled, and the scripts behind `npm run logo`, `templates` and `previews`. |
 | `e2e` | Browser tests. |
 
 ## Publishing

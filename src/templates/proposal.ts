@@ -56,10 +56,11 @@ const preamble = String.raw`% Packages and page layout for the proposal.
 \usepackage{enumitem}
 \usepackage[round,authoryear]{natbib}
 
-% Colours: the accent is used for headings, links and the timeline
+% Colours: the accent is used for headings, rules, links and the timeline.
+% It is black, so the proposal prints in black and grey. To add colour,
+% replace the \colorlet line with, say, \definecolor{accent}{HTML}{17715B}
 \usepackage[table]{xcolor}
-\definecolor{accent}{HTML}{17715B}
-\definecolor{accentsoft}{HTML}{CFE6DE}
+\colorlet{accent}{black}
 
 % Section headings in the accent colour
 \usepackage{titlesec}
@@ -73,10 +74,10 @@ const preamble = String.raw`% Packages and page layout for the proposal.
 \fancyhead[R]{\small\projecttitle}
 \fancyfoot[C]{\thepage}
 
-% A filled cell in the timeline
-\newcommand{\busy}{\cellcolor{accent}}
+% A filled cell in the timeline, in a lighter shade of the accent
+\newcommand{\busy}{\cellcolor{accent!55}}
 
-\usepackage[colorlinks=true,linkcolor=accent,citecolor=accent,urlcolor=accent]{hyperref}
+\usepackage[colorlinks=true,allcolors=accent]{hyperref}
 `;
 
 const details = String.raw`% Project details, used on the title block and in the page header.

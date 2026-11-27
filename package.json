@@ -22,6 +22,7 @@
     "notices": "node scripts/gen-notices.mjs",
     "logo": "node scripts/make-logo.mjs",
     "templates": "node scripts/community-templates.mjs",
+    "previews": "node scripts/template-previews.mjs",
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
@@ -42,7 +43,8 @@
     "lucide-react": "1.80.0",
     "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -4,31 +4,10 @@ import { notify, reportError } from '@/app/services';
 import { safeFileName, type WorkspaceModel, type WorkspaceState } from '@/app/workspace-model';
 import { Dialog, formatAgo, useTick } from '../common/ui';
 import { useStore } from '../hooks/useStore';
+import { GitHubGuideSteps, SUGGESTED_REPOSITORY } from './GitHubGuide';
+import { canPickFolder } from '@/app/pick-folder';
 
-export const NEW_REPOSITORY_URL = 'https://github.com/new';
-export const NEW_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
-
-/** The steps a user follows on github.com before connecting; shared with the restore dialog. */
-export function TokenSteps() {
-  return (
-    <ol style={{ margin: '0 0 4px', paddingLeft: 20, display: 'grid', gap: 8 }}>
-      <li>
-        <a href={NEW_REPOSITORY_URL} target="_blank" rel="noreferrer">
-          Create a private repository
-        </a>{' '}
-        on GitHub, for example "latex-backup". One repository can hold all your projects, each in its own folder.
-      </li>
-      <li>
-        <a href={NEW_TOKEN_URL} target="_blank" rel="noreferrer">
-          Create a fine-grained token
-        </a>
-        . Under "Repository access" choose "Only select repositories" and pick that repository. Under "Permissions" set "Contents" to "Read and
-        write".
-      </li>
-      <li>Fill in the fields below.</li>
-    </ol>
-  );
-}
+export { NEW_REPOSITORY_URL, NEW_TOKEN_URL } from './GitHubGuide';
 
 function ConnectDialog(props: { model: WorkspaceModel; projectName: string; hasToken: boolean; onClose: () => void }) {
   const [repository, setRepository] = useState('');
@@ -40,7 +19,7 @@ function ConnectDialog(props: { model: WorkspaceModel; projectName: string; hasT
 
   return (
     <Dialog title="Back up to a private GitHub repository" wide onClose={busy ? undefined : props.onClose}>
-      <TokenSteps />
+      <GitHubGuideSteps lastStep="form" />
       <form
         style={{ display: 'grid', gap: 12, marginTop: 12 }}
         onSubmit={(event) => {
@@ -61,7 +40,7 @@ function ConnectDialog(props: { model: WorkspaceModel; projectName: string; hasT
       >
         <label className="stack">
           Repository
-          <input className="field mono" value={repository} placeholder="your-name/latex-backup" required spellCheck={false} onChange={(event) => setRepository(event.target.value)} />
+          <input className="field mono" value={repository} placeholder={`your-user-name/${SUGGESTED_REPOSITORY}`} required spellCheck={false} onChange={(event) => setRepository(event.target.value)} />
         </label>
         <label className="stack">
           Folder inside the repository for this project
@@ -141,6 +120,12 @@ export function GitHubCard(props: { model: WorkspaceModel; state: WorkspaceState
           Keep a copy of this project in a private repository of your own. Each backup is one commit, so earlier states stay available on
           GitHub. The files go straight from this browser to GitHub.
         </p>
+        {!canPickFolder() && (
+          <p>
+            <b>Recommended in this browser.</b> Once connected, the project is backed up by itself and cannot be lost, even if this browser's data
+            is cleared. The setup guides you step by step, also without a GitHub account.
+          </p>
+        )}
         <div className="row">
           <button className="btn small" disabled={state.readOnly} onClick={() => setConnecting(true)}>
             Set up…

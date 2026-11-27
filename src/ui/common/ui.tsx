@@ -12,7 +12,9 @@ export function Dialog(props: { title: string; onClose?: () => void; children: R
   // went back to its first field each time would put what someone is typing into the wrong field.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const focusable = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button');
+    // A button marked data-autofocus wins over fields and buttons that come before it.
+    const focusable =
+      ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button');
     focusable?.focus();
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onEscape();
@@ -49,19 +51,27 @@ export interface MenuItem {
   checked?: boolean;
 }
 
-export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+/**
+ * A menu at (x, y), kept inside the window. `above` is the top edge of what
+ * opened it (a button, or the pointer for a context menu): a menu that does
+ * not fit below opens above that instead of over it, so that a second click
+ * on the button cannot choose an item.
+ */
+export function Menu(props: { x: number; y: number; above?: number; items: MenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: props.x, top: props.y });
   const { onClose } = props;
   useLayoutEffect(() => {
     const box = ref.current?.getBoundingClientRect();
     if (!box) return;
+    const above = props.above;
+    const flip = above !== undefined && props.y + box.height + 4 > window.innerHeight;
     setPosition({
       left: Math.max(4, Math.min(props.x, window.innerWidth - box.width - 4)),
-      top: Math.max(4, Math.min(props.y, window.innerHeight - box.height - 4)),
+      top: Math.max(4, Math.min(flip ? above - 4 - box.height : props.y, window.innerHeight - box.height - 4)),
     });
     ref.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
-  }, [props.x, props.y]);
+  }, [props.x, props.y, props.above]);
   useEffect(() => {
     const close = (event: Event): void => {
       if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
