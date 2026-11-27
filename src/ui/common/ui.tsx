@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { dismissToast, toasts } from '@/app/services';
 import { useStore } from '../hooks/useStore';
@@ -45,6 +45,8 @@ export interface MenuItem {
   disabled?: boolean;
   danger?: boolean;
   separatorBefore?: boolean;
+  /** Makes the item one choice of several (a radio item); true marks the current one. */
+  checked?: boolean;
 }
 
 export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
@@ -81,7 +83,8 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
         <div key={item.label}>
           {item.separatorBefore && <hr />}
           <button
-            role="menuitem"
+            role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            aria-checked={item.checked}
             className={item.danger ? 'danger' : undefined}
             disabled={item.disabled}
             onClick={() => {
@@ -91,6 +94,7 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
           >
             {item.icon}
             {item.label}
+            {item.checked && <Check size={14} className="menu-check" aria-hidden />}
           </button>
         </div>
       ))}

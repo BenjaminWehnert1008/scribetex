@@ -1,6 +1,7 @@
-import { Monitor, Moon, Sun } from 'lucide-react';
+import { Monitor, Moon, Palette, Sun } from 'lucide-react';
 import { useState } from 'react';
-import { nextTheme, readTheme, saveTheme, type ThemeChoice } from '@/app/theme';
+import { ACCENTS, nextTheme, readAccent, readTheme, saveAccent, saveTheme, type AccentChoice, type ThemeChoice } from '@/app/theme';
+import { Menu } from './ui';
 
 const LABEL: Record<ThemeChoice, string> = { system: 'Same as system', light: 'Light', dark: 'Dark' };
 
@@ -25,23 +26,43 @@ export function ThemeSwitch(props: { withLabel?: boolean }) {
   );
 }
 
-/**
- * An image in fixed light and dark versions; CSS shows the one for the active
- * mode (an <img> cannot see the switch, only the system setting).
- */
-export function ThemedImage(props: { name: string; alt: string; width: number; height: number; className?: string }) {
+/** A button that opens the list of colour schemes (green, blue, ..., black and white). */
+export function AccentSwitch(props: { withLabel?: boolean }) {
+  const [choice, setChoice] = useState<AccentChoice>(readAccent);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const current = ACCENTS.find((accent) => accent.id === choice) ?? ACCENTS[0];
   return (
     <>
-      {(['light', 'dark'] as const).map((mode) => (
-        <img
-          key={mode}
-          className={`${props.className ?? ''} only-${mode}`}
-          src={`./${props.name}-${mode}.svg`}
-          alt={props.alt}
-          width={props.width}
-          height={props.height}
+      <button
+        className={props.withLabel ? 'theme-switch' : 'icon-btn'}
+        title={`Colour scheme: ${current.label}`}
+        aria-label={`Colour scheme: ${current.label}`}
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
+        onClick={(event) => {
+          const box = event.currentTarget.getBoundingClientRect();
+          setMenu({ x: props.withLabel ? box.left : box.right - 200, y: box.bottom + 4 });
+        }}
+      >
+        <Palette size={props.withLabel ? 13 : 16} />
+        {props.withLabel && <span>{current.label}</span>}
+      </button>
+      {menu && (
+        <Menu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={ACCENTS.map((accent) => ({
+            label: accent.label,
+            icon: <span className="swatch" style={{ background: accent.swatch }} aria-hidden />,
+            checked: accent.id === choice,
+            run: () => {
+              saveAccent(accent.id);
+              setChoice(accent.id);
+            },
+          }))}
         />
-      ))}
+      )}
     </>
   );
 }
