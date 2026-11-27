@@ -9,7 +9,7 @@ which rules keep it that way.
 | --- | --- | --- | --- |
 | The editor | `index.html`, `assets/` | MIT (`LICENSE`) | this repository |
 | npm packages bundled into the editor (React, CodeMirror, pdf.js, IBM Plex fonts and others) | inside `assets/` | MIT, ISC, Apache-2.0, OFL-1.1 | listed with their full licence texts in `licenses/THIRD-PARTY-NOTICES.txt`, generated from `package-lock.json` by `scripts/gen-notices.mjs` on every build |
-| The engine worker | `engine/siglum-worker.js` | MIT | npm package `@siglum/engine`, with the two small changes written out in `scripts/engine-prepare.mjs` |
+| The engine worker | `engine/siglum-worker.js` | MIT | npm package `@siglum/engine`, with the small changes written out and explained in `scripts/engine-prepare.mjs` |
 | The TeX programs as WebAssembly (pdfTeX, BibTeX, makeindex and libraries) | `engine/runtime/` | GPL-2.0-or-later, LGPL-2.1-or-later and others | downloaded unchanged from the Siglum release named in `engine/engine.lock.json`, checksum verified |
 | LaTeX packages and fonts | `engine/runtime/`, `engine/packages/` | mostly LPPL, each package its own | TeX Live; every package with revision, licence and CTAN address in `engine/packages/MANIFEST.tsv` |
 | Community templates | `templates/` | each its own open licence (MIT, Apache-2.0, CC BY-SA 4.0 at the moment) | copied unchanged from the authors' GitHub repositories at the commits in `community-templates/sources.json`; every template carries its source and licence text in `TEMPLATE-LICENSE.txt`, which also goes into each project made from it |

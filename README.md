@@ -182,9 +182,10 @@ pull requests are welcome too.
 
 The editor's own code is under the MIT licence, see `LICENSE`. The engine and
 the LaTeX packages are other people's free software, published unchanged next
-to the editor under their own licences. So are the community templates in
-`public/templates/`, each with its licence in `TEMPLATE-LICENSE.txt`. `docs/COMPLIANCE.md` has the details,
-and the site itself serves them under `licenses/` and `engine/SOURCE.md`.
+to the editor under their own licences. `docs/COMPLIANCE.md` has the details,
+and the site itself serves them under `licenses/` and `engine/SOURCE.md`. The
+community templates in `public/templates/` are other authors' work too, each
+with its licence in `TEMPLATE-LICENSE.txt`.
 
 This project was written from scratch. It contains no code from other LaTeX
 editors.
