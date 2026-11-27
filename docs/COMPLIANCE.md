@@ -12,6 +12,7 @@ which rules keep it that way.
 | The engine worker | `engine/siglum-worker.js` | MIT | npm package `@siglum/engine`, with the two small changes written out in `scripts/engine-prepare.mjs` |
 | The TeX programs as WebAssembly (pdfTeX, BibTeX, makeindex and libraries) | `engine/runtime/` | GPL-2.0-or-later, LGPL-2.1-or-later and others | downloaded unchanged from the Siglum release named in `engine/engine.lock.json`, checksum verified |
 | LaTeX packages and fonts | `engine/runtime/`, `engine/packages/` | mostly LPPL, each package its own | TeX Live; every package with revision, licence and CTAN address in `engine/packages/MANIFEST.tsv` |
+| Community templates | `templates/` | each its own open licence (MIT, Apache-2.0, CC BY-SA 4.0 at the moment) | copied unchanged from the authors' GitHub repositories at the commits in `community-templates/sources.json`; every template carries its source and licence text in `TEMPLATE-LICENSE.txt`, which also goes into each project made from it |
 
 ## Why the editor can be MIT next to a GPL engine
 
@@ -55,7 +56,10 @@ code did not.
   LaTeX editors and is not anybody's property; the design here is our own.
 - The lists of LaTeX commands and environments used for completion
   (`src/ui/editor/latex-data.ts`) were written for this project.
-- The project templates are our own text.
+- The built-in project templates are our own text. The community templates
+  are other authors' work, taken from their own repositories under their
+  licences, never from another editor's gallery. `community-templates/README.md`
+  says which licences qualify.
 
 Anyone contributing is asked to keep to the same rules.
 

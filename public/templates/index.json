@@ -1,0 +1,393 @@
+{
+  "templates": [
+    {
+      "id": "jakes-resume",
+      "name": "Jake's Resume",
+      "category": "CV and resume",
+      "description": "A clean one-page resume, popular for software jobs",
+      "author": "Jake Gutierrez",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/jakegut/resume/tree/3e64a933141a7cda3a328f0743f73a201628a4ba",
+      "main": "resume.tex",
+      "files": [
+        {
+          "path": "resume.tex",
+          "bytes": 7868
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1444
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": []
+    },
+    {
+      "id": "academic-cv",
+      "name": "Academic CV",
+      "category": "CV and resume",
+      "description": "Education, publications, talks and teaching, with comments that explain each part",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/CV%20-%20Version%201",
+      "main": "CVTemplate1.tex",
+      "files": [
+        {
+          "path": "CVTemplate1.tex",
+          "bytes": 7061
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1485
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": []
+    },
+    {
+      "id": "one-page-resume",
+      "name": "One-page Resume",
+      "category": "CV and resume",
+      "description": "A compact resume with education, experience and skills",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/Resume",
+      "main": "ResumeTemplate.tex",
+      "files": [
+        {
+          "path": "ResumeTemplate.tex",
+          "bytes": 4822
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1475
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": []
+    },
+    {
+      "id": "expressive-resume",
+      "name": "Expressive Resume",
+      "category": "CV and resume",
+      "description": "A colourful resume with icons, and a matching cover letter",
+      "author": "Joseph Hale",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/thehale/expressive-resume/tree/ab38272f5f4fe465c1e8615248d3992ad4e306ca/src",
+      "main": "resume.tex",
+      "files": [
+        {
+          "path": "resume.tex",
+          "bytes": 1589
+        },
+        {
+          "path": "coverletter.tex",
+          "bytes": 2071
+        },
+        {
+          "path": "Expressive.cls",
+          "bytes": 5268
+        },
+        {
+          "path": "ExpressiveResume.cls",
+          "bytes": 1424
+        },
+        {
+          "path": "ExpressiveCoverLetter.cls",
+          "bytes": 1012
+        },
+        {
+          "path": "Colors.sty",
+          "bytes": 36200
+        },
+        {
+          "path": "images/qr.png",
+          "bytes": 58678
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1462
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "keycommand",
+        "pdfrender"
+      ]
+    },
+    {
+      "id": "arxiv-preprint",
+      "name": "arXiv Preprint",
+      "category": "Paper",
+      "description": "A paper in the style of a conference preprint, with ORCID links",
+      "author": "George Kour",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/kourgeorge/arxiv-style/tree/920514696f6e7270cab0558fd97c44515c63b4c4",
+      "main": "template.tex",
+      "files": [
+        {
+          "path": "template.tex",
+          "bytes": 6874
+        },
+        {
+          "path": "arxiv.sty",
+          "bytes": 7642
+        },
+        {
+          "path": "references.bib",
+          "bytes": 1034
+        },
+        {
+          "path": "orcid.pdf",
+          "bytes": 12397
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1447
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "doi"
+      ]
+    },
+    {
+      "id": "research-paper",
+      "name": "Research Paper",
+      "category": "Paper",
+      "description": "A paper split into section files, with handy maths commands",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/Research%20Paper",
+      "main": "Main.tex",
+      "files": [
+        {
+          "path": "Main.tex",
+          "bytes": 7575
+        },
+        {
+          "path": "TeX/Abstract.tex",
+          "bytes": 68
+        },
+        {
+          "path": "TeX/Introduction.tex",
+          "bytes": 107
+        },
+        {
+          "path": "TeX/References.bib",
+          "bytes": 161
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1484
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "doublestroke",
+        "pythonhighlight"
+      ]
+    },
+    {
+      "id": "lecture-notes",
+      "name": "Lecture Notes",
+      "category": "Notes",
+      "description": "Course notes with one file per lecture, theorem boxes and figures",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/Lecture%20Notes",
+      "main": "Main.tex",
+      "files": [
+        {
+          "path": "Main.tex",
+          "bytes": 8422
+        },
+        {
+          "path": "Lectures/Lecture1.tex",
+          "bytes": 341
+        },
+        {
+          "path": "Images/L2partition.jpeg",
+          "bytes": 129476
+        },
+        {
+          "path": "Images/L2projection.jpeg",
+          "bytes": 74877
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1482
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "doublestroke",
+        "pythonhighlight",
+        "newpx",
+        "tocloft"
+      ]
+    },
+    {
+      "id": "homework",
+      "name": "Homework",
+      "category": "Notes",
+      "description": "Problem sets with numbered problems, solutions and code",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/Homework",
+      "main": "HomeworkTemplate.tex",
+      "files": [
+        {
+          "path": "HomeworkTemplate.tex",
+          "bytes": 9459
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1470
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "doublestroke",
+        "pythonhighlight"
+      ]
+    },
+    {
+      "id": "essay",
+      "name": "Essay",
+      "category": "Notes",
+      "description": "A plain essay with a title block and footnotes",
+      "author": "Sara Venkatraman",
+      "license": {
+        "spdx": "MIT",
+        "name": "MIT License"
+      },
+      "source": "https://github.com/sara-venkatraman/LaTeX-Templates/tree/73ded4534dc26dfcac9744ffd499721f6351877c/Essay",
+      "main": "EssayTemplate.tex",
+      "files": [
+        {
+          "path": "EssayTemplate.tex",
+          "bytes": 1111
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 1464
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": []
+    },
+    {
+      "id": "tufte-handout",
+      "name": "Tufte Handout",
+      "category": "Notes",
+      "description": "Wide margins for side notes and small figures, after Edward Tufte's books",
+      "author": "The Tufte-LaTeX developers",
+      "license": {
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0"
+      },
+      "source": "https://github.com/Tufte-LaTeX/tufte-latex/tree/efb8c8e836890bad71fb5834acdd316ebde6db12",
+      "main": "sample-handout.tex",
+      "files": [
+        {
+          "path": "sample-handout.tex",
+          "bytes": 11689
+        },
+        {
+          "path": "sample-handout.bib",
+          "bytes": 1400
+        },
+        {
+          "path": "tufte-handout.cls",
+          "bytes": 928
+        },
+        {
+          "path": "tufte-common.def",
+          "bytes": 70890
+        },
+        {
+          "path": "tufte.bst",
+          "bytes": 26293
+        },
+        {
+          "path": "graphics/helix.pdf",
+          "bytes": 9436
+        },
+        {
+          "path": "graphics/sine.pdf",
+          "bytes": 6069
+        },
+        {
+          "path": "graphics/hilbertcurves.pdf",
+          "bytes": 29629
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 10681
+        }
+      ],
+      "preview": "preview.jpg",
+      "packages": [
+        "catchfile"
+      ]
+    },
+    {
+      "id": "metropolis",
+      "name": "Metropolis Slides",
+      "category": "Slides",
+      "description": "The popular flat, modern beamer theme, with its demo talk",
+      "author": "Matthias Vogelgesang",
+      "license": {
+        "spdx": "CC-BY-SA-4.0",
+        "name": "Creative Commons Attribution-ShareAlike 4.0"
+      },
+      "source": "https://github.com/matze/mtheme/tree/2fa6084b9d34fec9d2d5470eb9a17d0bf712b6c8/demo",
+      "main": "demo.tex",
+      "files": [
+        {
+          "path": "demo.tex",
+          "bytes": 9175
+        },
+        {
+          "path": "demo.bib",
+          "bytes": 1232
+        },
+        {
+          "path": "TEMPLATE-LICENSE.txt",
+          "bytes": 18881
+        }
+      ],
+      "preview": null,
+      "packages": [
+        "beamertheme-metropolis",
+        "appendixnumberbeamer",
+        "pgfplots"
+      ]
+    }
+  ]
+}
