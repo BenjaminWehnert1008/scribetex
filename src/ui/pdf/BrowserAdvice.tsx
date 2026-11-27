@@ -7,10 +7,8 @@ import { Info, X } from 'lucide-react';
 import { useState } from 'react';
 import { APP_NAME } from '@/app/brand';
 import { detectBrowser } from '@/app/services';
+import { CHROME_URL, EDGE_URL } from '../home/notices';
 import { browserIsBehind } from './pdfjs';
-
-export const CHROME_URL = 'https://www.google.com/chrome/';
-export const EDGE_URL = 'https://www.microsoft.com/edge/download';
 
 const DISMISSED_KEY = 'latex-editor:browser-tip-dismissed';
 
