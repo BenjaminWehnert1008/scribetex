@@ -12,7 +12,9 @@ export function Dialog(props: { title: string; onClose?: () => void; children: R
   // went back to its first field each time would put what someone is typing into the wrong field.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const focusable = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button');
+    // A button marked data-autofocus wins over fields and buttons that come before it.
+    const focusable =
+      ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current?.querySelector<HTMLElement>('[autofocus], input, select, textarea, button');
     focusable?.focus();
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onEscape();

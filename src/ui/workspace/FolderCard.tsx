@@ -83,8 +83,8 @@ export function FolderCard(props: { model: WorkspaceModel; state: WorkspaceState
           </>
         ) : (
           <p>
-            Saving to a folder on your disk needs Chrome or Edge on a computer. In this browser, download a ZIP when you finish a session, or
-            use the GitHub backup.
+            Saving to a folder on your disk works in Chrome and Edge on a computer. In this browser, the GitHub backup below keeps the project
+            just as safe.
           </p>
         )}
         {merge && (

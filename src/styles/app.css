@@ -106,6 +106,16 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 }
 .notice-card.warn { border-left-color: var(--warn); background: var(--warn-soft); }
 .notice-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.notice-options { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 8px; }
+.notice-card a { color: var(--accent); }
+.guide { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 14px; }
+.guide-step { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start; }
+.guide-number { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
+.guide-body { display: grid; gap: 6px; justify-items: start; min-width: 0; }
+.guide-body h3 { font-size: 14.5px; font-weight: 600; margin: 3px 0 0; }
+.guide-body p, .dialog .guide-body p + p { margin: 0; }
+.guide-body .btn { text-decoration: none; color: var(--ink); gap: 6px; }
+.guide-sub { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .project-list { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
 .project-row {
   display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; padding: 12px 14px;

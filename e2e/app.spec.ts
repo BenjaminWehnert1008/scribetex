@@ -54,6 +54,33 @@ test('tells a new visitor where the work is saved', async ({ page }) => {
   await expect(notice).toBeVisible();
 });
 
+test('suggests Chrome or Edge and guides through the GitHub setup where folders cannot be used', async ({ page }) => {
+  // Safari and Firefox have no folder picker; removing it here shows what they show.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });
+  });
+  await page.goto('./');
+  const notice = page.getByRole('dialog', { name: 'Where your work is saved' });
+  await expect(notice).toContainText('Tip: for saving to a folder, open scribeTeX in Chrome or Edge.');
+  await expect(notice).toContainText('equally safe');
+  await expect(notice.getByRole('link', { name: 'Get Chrome' })).toHaveAttribute('href', 'https://www.google.com/chrome/');
+  await notice.getByRole('button', { name: 'Show me how, step by step' }).click();
+
+  const guide = page.getByRole('dialog', { name: 'Set up a GitHub backup, step by step' });
+  await expect(guide.getByRole('link', { name: 'Sign up on GitHub' })).toHaveAttribute('href', 'https://github.com/signup');
+  const forms = guide.getByRole('link', { name: 'Open the form, already filled in' });
+  await expect(forms.first()).toHaveAttribute('href', /^https:\/\/github\.com\/new\?.*visibility=private/);
+  await expect(forms.nth(1)).toHaveAttribute('href', /^https:\/\/github\.com\/settings\/personal-access-tokens\/new\?.*contents=write/);
+  await guide.getByRole('button', { name: 'Got it' }).click();
+  await expect(guide).toBeHidden();
+
+  // The first-visit notice counts as seen; the home screen keeps the tip and the guide.
+  await page.reload();
+  await expect(notice).toBeHidden();
+  await page.getByRole('note').getByRole('button', { name: 'Show me how, step by step' }).click();
+  await expect(guide).toBeVisible();
+});
+
 test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await start(page);
   const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());

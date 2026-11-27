@@ -5,7 +5,7 @@ import { downloadBackup, getRepository, GitHubClient, listBackupFolders, parseRe
 import { tryNormalizePath } from '@/core/paths';
 import type { ProjectId } from '@/core/types';
 import { Dialog } from '../common/ui';
-import { NEW_TOKEN_URL } from '../workspace/GitHubCard';
+import { NEW_TOKEN_URL, SUGGESTED_REPOSITORY } from '../workspace/GitHubGuide';
 
 /** Brings a project back from a GitHub backup, for example on a new computer. */
 export function RestoreDialog(props: { services: Services; onClose: () => void; onRestored: (id: ProjectId) => void }) {
@@ -71,7 +71,7 @@ export function RestoreDialog(props: { services: Services; onClose: () => void; 
       >
         <label className="stack">
           Repository
-          <input className="field mono" value={repository} placeholder="your-name/latex-backup" required spellCheck={false} onChange={(event) => setRepository(event.target.value)} />
+          <input className="field mono" value={repository} placeholder={`your-user-name/${SUGGESTED_REPOSITORY}`} required spellCheck={false} onChange={(event) => setRepository(event.target.value)} />
         </label>
         <label className="stack">
           {stored ? 'Token (leave empty to use the one stored in this browser)' : 'Token'}
@@ -90,9 +90,10 @@ export function RestoreDialog(props: { services: Services; onClose: () => void; 
           <p className="muted" style={{ fontSize: 13 }}>
             On a new computer you need a new token:{' '}
             <a href={NEW_TOKEN_URL} target="_blank" rel="noreferrer">
-              create a fine-grained token
+              create a token on GitHub
             </a>{' '}
-            for the backup repository with "Contents: Read and write". It is stored in this browser only.
+            (the link fills in everything except the repository: under "Repository access" choose "Only select repositories" and pick your backup
+            repository). It is stored in this browser only.
           </p>
         )}
         <div className="actions" style={{ marginTop: 0, justifyContent: 'flex-start' }}>
