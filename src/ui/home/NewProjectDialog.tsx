@@ -5,6 +5,7 @@ import { reportError, type Services } from '@/app/services';
 import type { ProjectId } from '@/core/types';
 import { TEMPLATES, templateFileBytes } from '@/templates';
 import { type CommunityTemplate, loadCommunityFiles, loadCommunityTemplates, previewUrl } from '@/templates/community';
+import { builtInPreview } from '@/templates/previews';
 import { Dialog } from '../common/ui';
 
 type Source = 'built-in' | 'community';
@@ -56,7 +57,7 @@ function CommunityPicker(props: {
           </button>
         ))}
       </div>
-      <div className="template-grid community">
+      <div className="template-grid">
         {shown.map((template) => {
           const url = previewUrl(template);
           return (
@@ -105,10 +106,11 @@ export function NewProjectDialog(props: { services: Services; onClose: () => voi
   const [communityId, setCommunityId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const community = useCommunityTemplates(source === 'community');
+  const chosenBuiltIn = TEMPLATES.find((template) => template.id === templateId) ?? TEMPLATES[0]!;
   const chosenCommunity = Array.isArray(community) ? community.find((template) => template.id === communityId) : undefined;
 
   const createBuiltIn = async (): Promise<ProjectId> => {
-    const template = TEMPLATES.find((candidate) => candidate.id === templateId) ?? TEMPLATES[0]!;
+    const template = chosenBuiltIn;
     const { vault } = props.services;
     const project = await vault.createProject({ name: name.trim() || 'Untitled project', mainFile: template.mainFile });
     for (const dir of template.dirs ?? []) await vault.mkdir(project.id, dir, { origin: 'import' });
@@ -160,14 +162,29 @@ export function NewProjectDialog(props: { services: Services; onClose: () => voi
             </button>
           </div>
           {source === 'built-in' ? (
-            <div className="template-grid">
-              {TEMPLATES.map((template) => (
-                <button type="button" key={template.id} className="template" aria-pressed={template.id === templateId} onClick={() => setTemplateId(template.id)}>
-                  <b>{template.name}</b>
-                  <span>{template.description}</span>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="template-grid">
+                {TEMPLATES.map((template) => {
+                  const url = builtInPreview(template.id);
+                  return (
+                    <button
+                      type="button"
+                      key={template.id}
+                      className="template"
+                      title={template.description}
+                      aria-pressed={template.id === templateId}
+                      onClick={() => setTemplateId(template.id)}
+                    >
+                      <span className="template-preview" aria-hidden="true">
+                        {url ? <img src={url} alt="" /> : <span className="empty-page" />}
+                      </span>
+                      <b>{template.name}</b>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="template-detail">{chosenBuiltIn.description}.</p>
+            </>
           ) : (
             <CommunityPicker templates={community} selected={communityId} onSelect={setCommunityId} />
           )}

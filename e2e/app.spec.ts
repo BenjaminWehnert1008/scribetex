@@ -54,6 +54,44 @@ test('tells a new visitor where the work is saved', async ({ page }) => {
   await expect(notice).toBeVisible();
 });
 
+test('shows a picture of every built-in template when a project is started', async ({ page }) => {
+  await start(page);
+  await page.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
+  const cards = dialog.locator('button.template');
+  await expect(cards.first()).toBeVisible();
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(4);
+  // Blank shows an empty page; every other template a picture of its first page.
+  await expect(cards.filter({ hasText: 'Blank' }).locator('.empty-page')).toBeVisible();
+  const pictures = dialog.locator('button.template .template-preview > img');
+  await expect(pictures).toHaveCount(count - 1);
+  await expect.poll(() => pictures.evaluateAll((images) => images.filter((image) => (image as HTMLImageElement).naturalWidth > 0).length)).toBe(count - 1);
+  await expect(dialog.locator('.template-detail')).toHaveText('An empty document and an images folder.');
+  await cards.filter({ hasText: 'Thesis' }).click();
+  await expect(dialog.locator('.template-detail')).toHaveText('Chapters, front matter, appendix, images and a bibliography.');
+});
+
+test('remembers the colour scheme and recolours the logo', async ({ page }) => {
+  await start(page);
+  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  const green = await accent();
+  await createProject(page, 'Colours', 'Blank');
+  await page.getByRole('button', { name: 'Colour scheme: Green' }).click();
+  await page.getByRole('menuitemradio', { name: 'Rose' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
+  expect(await accent()).not.toBe(green);
+  const body = page.locator('.topbar-mark path').first();
+  await expect(body).toBeVisible();
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
+  await page.getByRole('button', { name: 'Colour scheme: Rose' }).click();
+  await expect(page.getByRole('menuitemradio', { name: 'Rose' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('menuitemradio', { name: 'Green' }).click();
+  await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
+  expect(await accent()).toBe(green);
+});
+
 test('keeps nested folders and text across a reload', async ({ page }) => {
   await start(page);
   await createProject(page, 'Nested', 'Report');
@@ -414,6 +452,9 @@ test.describe('with the LaTeX engine', () => {
     ['Thesis', 16],
     ['Project Proposal', 3],
     ['CV', 1],
+    ['Article', 1],
+    ['Report', 6],
+    ['Slides', 2],
   ] as const) {
     test(`compiles the ${template} template without errors`, async ({ page }) => {
       await start(page);

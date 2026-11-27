@@ -13,7 +13,7 @@ const article = `\\documentclass[11pt,a4paper]{article}
 \\usepackage{lmodern}
 \\usepackage{amsmath}
 \\usepackage{graphicx}
-\\usepackage{hyperref}
+\\usepackage[hidelinks]{hyperref} % clickable links, without colours or boxes
 
 \\title{An Article}
 \\author{Your Name}
@@ -52,7 +52,7 @@ const reportMain = `\\documentclass[11pt,a4paper]{report}
 \\usepackage{lmodern}
 \\usepackage{amsmath}
 \\usepackage{graphicx}
-\\usepackage{hyperref}
+\\usepackage[hidelinks]{hyperref} % clickable links, without colours or boxes
 \\graphicspath{{figures/}}
 
 \\title{A Longer Report}
@@ -76,6 +76,12 @@ const slides = `\\documentclass{beamer}
 \\usepackage[utf8]{inputenc}
 \\usepackage[T1]{fontenc}
 \\usepackage{lmodern}
+\\usepackage{bookmark} % builds the PDF's outline in one run, so one compile is enough
+
+% Black and white: titles and bullets in black, no navigation symbols.
+% For a colour, give the structure one, such as fg=teal.
+\\setbeamercolor{structure}{fg=black}
+\\setbeamertemplate{navigation symbols}{}
 
 \\title{A Short Talk}
 \\author{Your Name}

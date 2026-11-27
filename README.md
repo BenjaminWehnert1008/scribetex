@@ -16,8 +16,10 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
 - Projects with nested folders, drag and drop, upload of files and whole folders.
 - Starting points for a new project: Blank, Thesis, Project Proposal and CV,
   each with lorem ipsum text and a folder layout (chapters or sections,
-  `images/`, `bibliography/`, settings), plus Article, Report and Slides. They
-  live in `src/templates/`; pictures in them are drawn in code.
+  `images/`, `bibliography/`, settings), plus Article, Report and Slides. All
+  print in black and white except the CV, which has colour accents. The
+  new-project dialog shows a picture of each one's first page. They live in
+  `src/templates/`; pictures in them are drawn in code.
 - Templates from the community: resumes, papers, notes and slides by other
   authors under open licenses, each tested with the compiler here and shown
   with its author, license and source. See `community-templates/README.md`.
@@ -149,7 +151,10 @@ The browser tests that compile a document are skipped when the engine has not
 been prepared.
 
 The community templates are refreshed with `npm run templates` (see
-`community-templates/README.md`).
+`community-templates/README.md`). After changing a built-in template, run
+`npm run previews` to draw its picture for the new-project dialog again
+(`src/templates/previews/`); it needs `pdflatex` (TeX Live or TinyTeX) and
+`pdftoppm` (poppler), and a unit test fails while a picture is out of date.
 
 ### Layout of the code
 
@@ -158,7 +163,8 @@ The community templates are refreshed with `npm run templates` (see
 | `src/core` | Everything without a user interface: storage, saving, folder sync, GitHub backup, the compile queue, the log parser. Unit tested. |
 | `src/app` | Wires the core to one open project. |
 | `src/ui` | The React screens. |
-| `engine`, `scripts` | How `public/engine` is assembled. |
+| `src/templates` | The built-in templates, and the pictures of their first pages in `previews/`. |
+| `engine`, `scripts` | How `public/engine` is assembled, and the scripts behind `npm run logo`, `templates` and `previews`. |
 | `e2e` | Browser tests. |
 
 ## Publishing
