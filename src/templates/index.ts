@@ -76,6 +76,7 @@ const slides = `\\documentclass{beamer}
 \\usepackage[utf8]{inputenc}
 \\usepackage[T1]{fontenc}
 \\usepackage{lmodern}
+\\usepackage{bookmark} % builds the PDF's outline in one run, so one compile is enough
 
 % Black and white: titles and bullets in black, no navigation symbols.
 % For a colour, give the structure one, such as fg=teal.
