@@ -54,6 +54,26 @@ test('tells a new visitor where the work is saved', async ({ page }) => {
   await expect(notice).toBeVisible();
 });
 
+test('remembers the colour scheme and recolours the logo', async ({ page }) => {
+  await start(page);
+  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  const green = await accent();
+  await createProject(page, 'Colours', 'Blank');
+  await page.getByRole('button', { name: 'Colour scheme: Green' }).click();
+  await page.getByRole('menuitemradio', { name: 'Rose' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
+  expect(await accent()).not.toBe(green);
+  const body = page.locator('.topbar-mark path').first();
+  await expect(body).toBeVisible();
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
+  await page.getByRole('button', { name: 'Colour scheme: Rose' }).click();
+  await expect(page.getByRole('menuitemradio', { name: 'Rose' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('menuitemradio', { name: 'Green' }).click();
+  await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
+  expect(await accent()).toBe(green);
+});
+
 test('keeps nested folders and text across a reload', async ({ page }) => {
   await start(page);
   await createProject(page, 'Nested', 'Report');

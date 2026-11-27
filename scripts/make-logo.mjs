@@ -7,8 +7,9 @@
  *   logo-mark.svg  the typewriter on a 24 x 24 grid, for the top bar
  *   logo.svg       the typewriter and the word "scribeTeX" (README, home page)
  * The favicon, logo-mark.svg and logo.svg follow the system's dark mode on
- * their own. The app also has a light/dark switch, which an <img> cannot see,
- * so logo-mark and logo also come as fixed -light and -dark files.
+ * their own. Inside the app the logo is drawn inline from the same pixel data
+ * (src/ui/home/PixelLogo.tsx), so it also follows the app's mode switch and
+ * colour scheme.
  * Every pixel is one unit of the SVG's viewBox, so the files stay sharp at any
  * whole-number scale. Edit the grids in src/app/logo-pixels.json and run `npm run logo`; the
  * home page draws its typing animation from the same file.
@@ -38,24 +39,15 @@ function paint(grid, left, top, paths) {
   });
 }
 
-/** mode "auto" follows the system's dark mode; "light" and "dark" are fixed. */
-function svg(width, height, paths, title, mode = 'auto') {
-  const colour = (key) => (mode === 'dark' && key in DARK ? DARK[key] : COLOURS[key]);
-  const style =
-    mode === 'auto'
-      ? `<style>@media (prefers-color-scheme: dark){${Object.entries(DARK).map(([key, dark]) => `.${key}{fill:${dark}}`).join('')}}</style>`
-      : '';
+/** An SVG that follows the system's dark mode. */
+function svg(width, height, paths, title) {
+  const style = `<style>@media (prefers-color-scheme: dark){${Object.entries(DARK).map(([key, dark]) => `.${key}{fill:${dark}}`).join('')}}</style>`;
   const body = Object.entries(paths)
-    .map(([key, parts]) => `<path class="${key}" fill="${colour(key)}" d="${parts.join('')}"/>`)
+    .map(([key, parts]) => `<path class="${key}" fill="${COLOURS[key]}" d="${parts.join('')}"/>`)
     .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges"><title>${title}</title>${style}${body}</svg>\n`;
 }
 
-/** Writes name.svg (follows the system) plus name-light.svg and name-dark.svg. */
-function writeAll(name, width, height, paths) {
-  write(`${name}.svg`, svg(width, height, paths, 'scribeTeX'));
-  for (const mode of ['light', 'dark']) write(`${name}-${mode}.svg`, svg(width, height, paths, 'scribeTeX', mode));
-}
 
 function write(name, text) {
   fs.writeFileSync(fileURLToPath(new URL(`../public/${name}`, import.meta.url)), text);
@@ -110,7 +102,7 @@ writeBinary('apple-touch-icon.png', png(MARK, 6, '#fbf9f4', 3));
 
 paths = {};
 paint(MARK, 0, 0, paths);
-writeAll('logo-mark', 24, 24, paths);
+write('logo-mark.svg', svg(24, 24, paths, 'scribeTeX'));
 
 let x = DATA.text.left;
 [...'scribeTeX'].forEach((letter, index) => {
@@ -119,4 +111,4 @@ let x = DATA.text.left;
   paint(glyph, x, DATA.text.top, paths);
   x += glyph[0].length + DATA.text.gap;
 });
-writeAll('logo', x - DATA.text.gap, 24, paths);
+write('logo.svg', svg(x - DATA.text.gap, 24, paths, 'scribeTeX'));
