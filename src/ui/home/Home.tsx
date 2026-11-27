@@ -1,5 +1,5 @@
-import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, MessageSquareText, Plus } from 'lucide-react';
+import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   APP_NAME,
   APP_TAGLINE,
@@ -11,9 +11,11 @@ import {
   REPO_URL,
 } from '@/app/brand';
 import { canPickFolder, pickFolder } from '@/app/pick-folder';
+import { describeMerge, openReviewFile } from '@/app/review-files';
 import { detectBrowser, notify, reportError, type Services } from '@/app/services';
 import { safeFileName } from '@/app/workspace-model';
 import { exportProjectZip, importZipAsProject } from '@/core/backup/zip';
+import { isReviewFileName, REVIEW_EXTENSION } from '@/core/review/package';
 import type { DirHandle } from '@/core/fsa/disk';
 import { FolderSync } from '@/core/fsa/sync';
 import type { ProjectId, ProjectMeta } from '@/core/types';
@@ -37,6 +39,8 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [guide, setGuide] = useState(false);
   const [opening, setOpening] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
+  const reviewInput = useRef<HTMLInputElement>(null);
+  const [dropping, setDropping] = useState(false);
   const now = useTick(30_000);
 
   const refresh = useCallback(() => {
@@ -74,6 +78,29 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     props.onOpen(result.projectId);
   };
 
+  /** A review copy from a colleague becomes a project to comment on; comments sent back go into their project. */
+  const openReview = async (file: File): Promise<void> => {
+    const opened = await openReviewFile(services, new Uint8Array(await file.arrayBuffer()));
+    if (opened.kind === 'copy') {
+      notify(opened.updated ? `The review copy from ${opened.from} is updated.` : `This is a review copy from ${opened.from}. Select words in the PDF to comment on them.`);
+    } else {
+      notify(describeMerge(opened.summary));
+    }
+    props.onOpen(opened.projectId);
+  };
+
+  /** Files dropped anywhere on the page: a review file or a ZIP. */
+  const onDrop = (event: DragEvent): void => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    setDropping(false);
+    const file = event.dataTransfer.files[0];
+    if (!file) return;
+    if (isReviewFileName(file.name)) openReview(file).catch((error: unknown) => reportError(error, 'The review file could not be opened'));
+    else if (/\.zip$/i.test(file.name)) importZip(file).catch((error: unknown) => reportError(error, 'The ZIP could not be imported'));
+    else notify(`Drop a review file (${REVIEW_EXTENSION}) or a ZIP here.`);
+  };
+
   /** Opens a folder from disk as a project. The folder stays the place where its files live. */
   const openFolder = async (): Promise<void> => {
     const root = await pickFolder();
@@ -99,7 +126,19 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   };
 
   return (
-    <div className="home">
+    <div
+      className={`home ${dropping ? 'dropping' : ''}`}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        setDropping(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.relatedTarget === null || !event.currentTarget.contains(event.relatedTarget as Node)) setDropping(false);
+      }}
+      onDrop={onDrop}
+    >
       <div className="home-inner">
         <h1 className="brand">
           <PixelLogo label={APP_NAME} paused={notice} />
@@ -137,6 +176,20 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           <button className="btn" onClick={() => setRestoring(true)}>
             <GitBranch size={15} /> Restore from GitHub
           </button>
+          <button className="btn" title="A review copy someone sent you, or the comments sent back on yours" onClick={() => reviewInput.current?.click()}>
+            <MessageSquareText size={15} /> Open a review file
+          </button>
+          <input
+            ref={reviewInput}
+            type="file"
+            accept={REVIEW_EXTENSION}
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) openReview(file).catch((error: unknown) => reportError(error, 'The review file could not be opened'));
+            }}
+          />
           <input
             ref={zipInput}
             type="file"
@@ -165,8 +218,16 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
               <button className="project-open" onClick={() => props.onOpen(project.id)}>
                 <span className="project-name">{project.name}</span>
                 <span className="project-meta">
-                  {project.fileCount === 1 ? '1 file' : `${project.fileCount} files`}, {formatBytes(project.totalBytes)} · opened{' '}
-                  {formatAgo(project.lastOpenedAt, now)}
+                  {project.reviewCopy ? (
+                    <>
+                      <span className="review-tag">Review copy</span> from {project.reviewCopy.from.name}
+                    </>
+                  ) : (
+                    <>
+                      {project.fileCount === 1 ? '1 file' : `${project.fileCount} files`}, {formatBytes(project.totalBytes)}
+                    </>
+                  )}{' '}
+                  · opened {formatAgo(project.lastOpenedAt, now)}
                 </span>
               </button>
               <span className="where" title={project.link ? 'Also written to a folder on this computer' : 'Kept in this browser only'}>

@@ -8,7 +8,9 @@ import {
   HardDrive,
   Info,
   ListTree,
+  MessageSquareText,
   PanelBottom,
+  Send,
   Play,
   Sparkles,
   Square,
@@ -32,7 +34,9 @@ import type { Diagnostic, Path, ProjectMeta } from '@/core/types';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { CodeEditor } from '../editor/CodeEditor';
 import { useStore } from '../hooks/useStore';
-import { PdfView } from '../pdf/PdfView';
+import { type PdfApi, PdfView } from '../pdf/PdfView';
+import { isReviewFileName, ModeSwitch, ReviewPanel, SendBackDialog, SendForReviewDialog, takeReviewFile } from '../review/ReviewPanel';
+import { useReviewUi } from '../review/useReviewUi';
 import type { PagePoint, PageRect } from '../pdf/pdf-surface';
 import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
@@ -397,6 +401,18 @@ export function Workspace(props: WorkspaceProps) {
     setPdfReveal({ page: spot.page, rects: spot.rects });
   }, [model, activeTab, cursor]);
 
+  // Comments and suggestions.
+  const pdfApi = useRef<PdfApi | null>(null);
+  const syncTexText = compile.synctex;
+  const syncMapFn = useCallback(() => (syncTexText ? model.compile.syncMap() : null), [model, syncTexText]);
+  const review = useReviewUi({ model, pdfApi, activePath: textPath, syncMap: syncMapFn, pdfVersion: compile.pdfVersion, hasPdf: compile.pdf !== null, showPane: setPane });
+  const [sendingReview, setSendingReview] = useState(false);
+  const [sendingBack, setSendingBack] = useState(false);
+  const reviewCopy = state.reviewCopy;
+  const openProject = useCallback((id: string) => {
+    window.location.hash = `#/p/${id}`;
+  }, []);
+
   const getIndex = useCallback(() => indexRef.current, []);
   const onCursor = useCallback((line: number, column: number) => setCursor({ line, column }), []);
 
@@ -456,11 +472,16 @@ export function Workspace(props: WorkspaceProps) {
       .catch((error: unknown) => reportError(error, 'The ZIP could not be created'));
   };
 
-  const rail: { id: SidePanel; label: string; icon: ReactNode }[] = [
+  const rail: { id: SidePanel; label: string; icon: ReactNode; badge?: number }[] = [
     { id: 'files', label: 'Files', icon: <Files size={18} /> },
     { id: 'outline', label: 'Outline', icon: <ListTree size={18} /> },
-    { id: 'history', label: 'History', icon: <ClockArrowUp size={18} /> },
-    { id: 'storage', label: 'Saving and backup', icon: <HardDrive size={18} /> },
+    { id: 'review', label: 'Review', icon: <MessageSquareText size={18} />, badge: review.openCount },
+    ...(reviewCopy
+      ? []
+      : ([
+          { id: 'history', label: 'History', icon: <ClockArrowUp size={18} /> },
+          { id: 'storage', label: 'Saving and backup', icon: <HardDrive size={18} /> },
+        ] as const)),
   ];
 
   const pdfEmpty = (): ReactNode => {
@@ -490,9 +511,29 @@ export function Workspace(props: WorkspaceProps) {
   };
 
   return (
-    <div className="ws">
+    <div
+      className="ws"
+      onDropCapture={(event) => {
+        // A review file dropped anywhere is read as one, not added to the project's files.
+        const files = [...(event.dataTransfer?.files ?? [])];
+        const reviewFile = files.find((file) => isReviewFileName(file.name));
+        if (!reviewFile) return;
+        event.preventDefault();
+        event.stopPropagation();
+        takeReviewFile(reviewFile, model, services, openProject).catch((error: unknown) => reportError(error, 'The review file could not be read'));
+      }}
+    >
       <div>
-        {state.readOnly && (
+        {reviewCopy && (
+          <div className="banner info rv-banner" role="status">
+            <MessageSquareText size={16} />
+            <span className="grow">
+              <b>Review copy</b> of “{reviewCopy.project}” from {reviewCopy.from.name}, sent {new Date(reviewCopy.sentAt).toLocaleDateString()}. Select words in the PDF or the
+              source to comment or suggest a change. Nothing here changes the original; when you are done, send your comments back.
+            </span>
+          </div>
+        )}
+        {state.readOnly && !reviewCopy && (
           <div className="banner" role="status">
             <TriangleAlert size={16} />
             <span className="grow">This project is open for editing in another tab or window. Here it can only be read.</span>
@@ -540,19 +581,33 @@ export function Workspace(props: WorkspaceProps) {
           <span>{chip.text}</span>
         </button>
         <span className="spacer" />
-        <label className="hide-narrow muted" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>
-          <input
-            type="checkbox"
-            checked={state.project.autoCompile}
-            onChange={(event) => void model.updateProject({ autoCompile: event.target.checked }).catch((error: unknown) => reportError(error))}
-          />
-          Auto
-        </label>
-        <button className="btn" onClick={() => setAsking({ problem: null })} title="Ask Claude about this project">
-          <Sparkles size={14} />
-          <span className="hide-narrow">Ask Claude</span>
-        </button>
-        {running ? (
+        {reviewCopy ? (
+          <>
+            <span className="hide-narrow">
+              <ModeSwitch ui={review} model={model} compact />
+            </span>
+            <button className="btn primary" onClick={() => review.withName(() => setSendingBack(true))} title="Download your comments to send them to the author">
+              <Send size={14} />
+              <span className="hide-narrow">Send comments back</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <label className="hide-narrow muted" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>
+              <input
+                type="checkbox"
+                checked={state.project.autoCompile}
+                onChange={(event) => void model.updateProject({ autoCompile: event.target.checked }).catch((error: unknown) => reportError(error))}
+              />
+              Auto
+            </label>
+            <button className="btn" onClick={() => setAsking({ problem: null })} title="Ask Claude about this project">
+              <Sparkles size={14} />
+              <span className="hide-narrow">Ask Claude</span>
+            </button>
+          </>
+        )}
+        {reviewCopy ? null : running ? (
           <button className="btn" onClick={() => model.compile.stop()} title="Stop the compile">
             <Square size={14} /> Stop
           </button>
@@ -580,7 +635,7 @@ export function Workspace(props: WorkspaceProps) {
         <div className="pane-switch" role="tablist">
           {(['files', 'editor', 'pdf'] as const).map((id) => (
             <button key={id} role="tab" aria-selected={pane === id} onClick={() => setPane(id)}>
-              {id === 'files' ? 'Files' : id === 'editor' ? 'Source' : 'PDF'}
+              {id === 'files' ? (state.panel === 'review' ? 'Comments' : 'Files') : id === 'editor' ? 'Source' : 'PDF'}
             </button>
           ))}
         </div>
@@ -589,12 +644,14 @@ export function Workspace(props: WorkspaceProps) {
             {rail.map((item) => (
               <button key={item.id} title={item.label} aria-label={item.label} aria-pressed={state.panel === item.id} onClick={() => model.setPanel(item.id)}>
                 {item.icon}
+                {item.badge ? <span className="rail-badge" aria-hidden="true">{item.badge > 99 ? '99+' : item.badge}</span> : null}
               </button>
             ))}
           </nav>
           <aside className="side" style={{ width: layout.side }}>
             {state.panel === 'files' && <FileTree model={model} state={state} mainFile={mainFile} />}
             {state.panel === 'outline' && <OutlinePanel model={model} index={index} />}
+            {state.panel === 'review' && <ReviewPanel model={model} services={services} ui={review} onOpenProject={openProject} />}
             {state.panel === 'history' && <HistoryPanel model={model} services={services} readOnly={state.readOnly} />}
             {state.panel === 'storage' && (
               <StoragePanel model={model} state={state}>
@@ -655,6 +712,7 @@ export function Workspace(props: WorkspaceProps) {
                     openPaths={openPaths}
                     getIndex={getIndex}
                     onCursor={onCursor}
+                    {...review.editorProps}
                   />
                 </div>
               )}
@@ -726,6 +784,8 @@ export function Workspace(props: WorkspaceProps) {
               onFindSource={hasSync ? findSource : undefined}
               onShowCursor={hasSync ? showCursor : undefined}
               reveal={pdfReveal}
+              apiRef={pdfApi}
+              {...review.pdfProps}
             />
           </section>
         </div>
@@ -765,6 +825,7 @@ export function Workspace(props: WorkspaceProps) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            ...(reviewCopy ? [] : [{ label: 'Send for review', run: () => review.withName(() => setSendingReview(true)) }]),
             { label: 'Project settings', run: () => setSettingsOpen(true) },
             { label: 'Save a version now', run: () => void model.snapshotNow(null).then(() => notify('Version saved. You find it under History.')).catch((error: unknown) => reportError(error)) },
             { label: 'Download PDF', disabled: !compile.pdf, separatorBefore: true, run: () => compile.pdf && downloadBytes(pdfName, compile.pdf, 'application/pdf') },
@@ -783,6 +844,11 @@ export function Workspace(props: WorkspaceProps) {
           cursorLine={cursor?.line ?? null}
           onClose={() => setAsking(null)}
         />
+      )}
+      {review.overlay}
+      {sendingReview && <SendForReviewDialog model={model} onClose={() => setSendingReview(false)} />}
+      {sendingBack && (
+        <SendBackDialog model={model} count={review.state.threads.filter((thread) => thread.author.id === review.state.me?.id).length} onClose={() => setSendingBack(false)} />
       )}
       {settingsOpen && (
         <ProjectSettings model={model} project={state.project} texFiles={texFiles} detected={compile.mainFile} onClose={() => setSettingsOpen(false)} />

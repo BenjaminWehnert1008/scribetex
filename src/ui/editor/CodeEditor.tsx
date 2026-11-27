@@ -13,8 +13,10 @@ import type { Reveal, WorkspaceModel } from '@/app/workspace-model';
 import { explain } from '@/core/latex/log';
 import { dirname } from '@/core/paths';
 import type { Diagnostic, Path } from '@/core/types';
+import type { TextChange } from '@/core/review/text-diff';
 import { latexCompletions } from './completion';
 import { findWordNear } from './find-word';
+import { reviewMarks, setSourceMarks, type SourceMark } from './review-marks';
 
 const highlight = HighlightStyle.define([
   { tag: tags.tagName, color: 'var(--syn-command)' },
@@ -113,6 +115,29 @@ export interface CodeEditorProps {
   openPaths: Path[];
   getIndex: () => ProjectIndex | null;
   onCursor?: (line: number, column: number) => void;
+  /** Comments and suggestions on the file shown. */
+  marks?: SourceMark[];
+  /** 'comment' and 'suggest' stop typing from changing the text; it starts a comment or a suggestion instead. */
+  reviewMode?: 'edit' | 'comment' | 'suggest';
+  onMarkClick?: (id: string, box: DOMRect) => void;
+  /** The selection changed, once the mouse is up. Null when nothing is selected. */
+  onSelection?: (selection: EditorSelection | null) => void;
+  /** Typing or pasting in a review mode. */
+  onReviewType?: (input: EditorSelection & { text: string }) => void;
+}
+
+export interface EditorSelection {
+  path: Path;
+  from: number;
+  to: number;
+  /** Where the selection ends on screen. */
+  box: DOMRect;
+}
+
+function boxAt(view: EditorView, pos: number): DOMRect {
+  const coords = view.coordsAtPos(pos) ?? view.coordsAtPos(Math.max(0, pos - 1));
+  if (!coords) return view.dom.getBoundingClientRect();
+  return new DOMRect(coords.left, coords.top, Math.max(1, coords.right - coords.left), coords.bottom - coords.top);
 }
 
 /**
@@ -127,13 +152,23 @@ export function CodeEditor(props: CodeEditorProps) {
   const shown = useRef<{ path: Path; version: number } | null>(null);
   const pendingReveal = useRef<Reveal | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
+  const pointerDown = useRef(false);
+  const lastSelection = useRef<string>('');
+  const reportSelection = (view: EditorView): void => {
+    const current = shown.current;
+    const { from, to } = view.state.selection.main;
+    const key = current && from !== to ? `${current.path}:${from}:${to}` : '';
+    if (key === lastSelection.current) return;
+    lastSelection.current = key;
+    latest.current.onSelection?.(current && from !== to ? { path: current.path, from, to, box: boxAt(view, to) } : null);
+  };
   const tools = useRef<{ makeState: (text: string) => EditorState; jump: (reveal: Reveal) => void } | null>(null);
   const latest = useRef(props);
   useEffect(() => {
     latest.current = props;
   });
 
-  const { model, path, buffersVersion, readOnly, diagnostics, openPaths } = props;
+  const { model, path, buffersVersion, readOnly, diagnostics, openPaths, marks, reviewMode = 'edit' } = props;
 
   // The view itself, created once per workspace.
   useEffect(() => {
@@ -193,16 +228,50 @@ export function CodeEditor(props: CodeEditorProps) {
         indentWithTab,
       ]),
       readOnlyExtension.of([]),
+      reviewMarks({
+        // A review mode wins over read-only: in a review copy, typing over a selection starts a comment or a suggestion.
+        mode: () => {
+          const mode = latest.current.reviewMode ?? 'edit';
+          return mode !== 'edit' ? mode : latest.current.readOnly ? 'locked' : 'edit';
+        },
+        onMarkClick: (id, box) => latest.current.onMarkClick?.(id, box),
+        onType: (view, text) => {
+          const current = shown.current;
+          if (!current) return;
+          const { from, to } = view.state.selection.main;
+          latest.current.onReviewType?.({ path: current.path, from, to, box: boxAt(view, to), text });
+        },
+      }),
       EditorView.contentAttributes.of({ 'aria-label': 'LaTeX source', spellcheck: 'true' }),
       EditorView.updateListener.of((update) => {
         const current = shown.current;
         if (!current) return;
-        if (update.docChanged) latest.current.model.edit(current.path, update.state.doc.toString());
+        if (update.docChanged) {
+          const changes: TextChange[] = [];
+          update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => changes.push({ from: fromA, to: toA, insert: inserted.toString() }));
+          latest.current.model.edit(current.path, update.state.doc.toString(), changes);
+        }
         if (update.selectionSet || update.docChanged) {
           const head = update.state.selection.main.head;
           const line = update.state.doc.lineAt(head);
           latest.current.onCursor?.(line.number, head - line.from + 1);
         }
+        if (update.selectionSet && !pointerDown.current) reportSelection(update.view);
+      }),
+      EditorView.domEventHandlers({
+        mousedown: () => {
+          pointerDown.current = true;
+          const up = (): void => {
+            pointerDown.current = false;
+            window.removeEventListener('mouseup', up);
+            // The selection is final once the button is up.
+            requestAnimationFrame(() => {
+              if (viewRef.current) reportSelection(viewRef.current);
+            });
+          };
+          window.addEventListener('mouseup', up);
+          return false;
+        },
       }),
     ];
 
@@ -211,13 +280,35 @@ export function CodeEditor(props: CodeEditorProps) {
     const cache = states.current;
     const jump = (reveal: Reveal): void => {
       const doc = view.state.doc;
+      if (reveal.range) {
+        const from = Math.min(reveal.range.from, doc.length);
+        // Selecting the range would open the comment toolbar; the cursor goes to its start, and the range is marked anyway.
+        view.dispatch({ selection: { anchor: from }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
+        if (!reveal.keepFocus) view.focus();
+        return;
+      }
       const lineNumber = Math.max(1, Math.min(reveal.line, doc.lines));
       const found = reveal.word ? findWordNear((number) => (number >= 1 && number <= doc.lines ? doc.line(number).text : null), lineNumber, reveal.word) : null;
       const line = doc.line(found?.line ?? lineNumber);
       const selection = found ? { anchor: line.from + found.at, head: line.from + found.at + reveal.word!.length } : { anchor: line.from };
       view.dispatch({ selection, effects: EditorView.scrollIntoView(selection.anchor, { y: 'center' }) });
-      view.focus();
+      if (!reveal.keepFocus) view.focus();
     };
+    // Changes the model makes to text the editor holds, such as an accepted suggestion, go through the editor.
+    model.setEditorBridge({
+      apply: (target, change) => {
+        if (shown.current?.path === target) {
+          view.dispatch({ changes: change, userEvent: 'input.review' });
+          return true;
+        }
+        const cached = cache.get(target);
+        if (!cached) return false;
+        const next = cached.update({ changes: change, userEvent: 'input.review' }).state;
+        cache.set(target, next);
+        latest.current.model.edit(target, next.doc.toString(), [change]);
+        return true;
+      },
+    });
     // Every file's state is built from the same extension list.
     tools.current = { makeState: (text) => EditorState.create({ doc: text, extensions }), jump };
     const offReveal = model.reveal.on((reveal) => {
@@ -227,6 +318,7 @@ export function CodeEditor(props: CodeEditorProps) {
 
     return () => {
       offReveal();
+      model.setEditorBridge(null);
       view.destroy();
       viewRef.current = null;
       tools.current = null;
@@ -258,8 +350,11 @@ export function CodeEditor(props: CodeEditorProps) {
       const line = state.doc.lineAt(head);
       latest.current.onCursor?.(line.number, head - line.from + 1);
     }
+    // In a review mode the text can be selected and the cursor moved, but typing makes a comment or a suggestion.
     view.dispatch({
-      effects: readOnlyCompartment.current.reconfigure(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
+      effects: readOnlyCompartment.current.reconfigure(
+        reviewMode !== 'edit' ? [EditorState.readOnly.of(true)] : readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
+      ),
     });
     view.dispatch(setDiagnostics(view.state, toEditorDiagnostics(view.state, diagnostics, path)));
     const reveal = pendingReveal.current;
@@ -267,7 +362,14 @@ export function CodeEditor(props: CodeEditorProps) {
       pendingReveal.current = null;
       helpers.jump(reveal);
     }
-  }, [model, path, buffersVersion, readOnly, diagnostics]);
+  }, [model, path, buffersVersion, readOnly, diagnostics, reviewMode]);
+
+  // Comments and suggestions of the file shown.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !shown.current) return;
+    view.dispatch({ effects: setSourceMarks.of(marks ?? []) });
+  }, [marks, path, buffersVersion]);
 
   // Forget the editing state of files whose tab was closed.
   useEffect(() => {

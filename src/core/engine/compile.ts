@@ -123,6 +123,29 @@ export class CompileController {
     this.stop();
   }
 
+  /** How the file names in the SyncTeX data of the PDF on screen are to be read. */
+  syncContext(): { knownPaths: Path[]; workDir: Path } | null {
+    return this.#syncContext ? { knownPaths: [...this.#syncContext.knownPaths], workDir: this.#syncContext.workDir } : null;
+  }
+
+  /**
+   * Shows a PDF that was made elsewhere, as a review copy brings one, instead
+   * of compiling. Nothing is compiled afterwards unless asked.
+   */
+  showOutput(output: { pdf: Uint8Array | null; synctex: string | null; mainFile: Path | null; knownPaths: Path[]; workDir: Path }): void {
+    this.#syncContext = { knownPaths: output.knownPaths, workDir: output.workDir };
+    const previous = this.state.get();
+    this.state.set({
+      ...INITIAL,
+      pdf: output.pdf,
+      pdfVersion: previous.pdfVersion + 1,
+      ok: output.pdf ? true : null,
+      synctex: output.synctex,
+      mainFile: output.mainFile,
+      finishedAt: this.#now(),
+    });
+  }
+
   /** The SyncTeX data of the PDF on screen, read on first use. Null when the engine wrote none. */
   syncMap(): SyncTexMap | null {
     const text = this.state.get().synctex;

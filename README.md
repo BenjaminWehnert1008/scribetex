@@ -33,6 +33,8 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
   line with the word selected, also for files in subfolders. The target
   button above the PDF marks where the line under the cursor ended up.
 - Saving that is built so that work is not lost. See the next section.
+- **Comments and suggestions**, on the source and on the PDF, for a
+  supervisor who does not know LaTeX. See below.
 - **Ask Claude**, from the top bar or next to any problem. See below.
 
 ## Where the work is saved
@@ -76,6 +78,30 @@ the user creates and that is stored in that browser only. To set it up:
 
 Each backup is one commit. "Restore from GitHub" on the start page brings a
 project back on another computer.
+
+## Comments and suggestions
+
+Select words in the source or in the PDF and choose **Comment** or **Suggest a
+change**. A comment is highlighted in both places, in the colour of the person
+who wrote it, and stays on its words while the text around them changes. In
+**Suggesting** mode, typing over a selection makes a suggestion instead of a
+change: the old words are struck through, the new ones shown after them, and
+the author accepts or rejects each one (or all at once).
+
+Reviewing needs no account and no server. **Send for review** downloads a
+review copy (a `.scribetex` file with the PDF, the text and the comments so
+far). The supervisor opens it on the site, comments and suggests on the PDF,
+and sends back the file that **Send comments back** gives them. Dropped into
+the project, every comment lands where it was made, also when the text has
+changed in the meantime. Files from several people can be added in any order;
+nothing is added twice.
+
+A suggestion made on the PDF becomes an exact edit of the source when the
+changed words are plain text there. When they touch a command, a brace or
+maths that would need LaTeX, it is kept as a note to make by hand.
+
+Under the hood the text and the comments are [Yjs](https://github.com/yjs/yjs)
+documents (`src/core/review`), so editing together live can be added later.
 
 ## Ask Claude
 
