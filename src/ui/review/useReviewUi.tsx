@@ -9,7 +9,8 @@ import { NeedNameError, type ResolvedThread } from '@/app/review-session';
 import { reportError } from '@/app/services';
 import type { WorkspaceModel } from '@/app/workspace-model';
 import { forwardSearch, inverseSearch, type SyncTexMap } from '@/core/latex/synctex';
-import { findInSource, findOnPage, planPlainEdit, plainOf, readableSelection } from '@/core/review/match';
+import { usesGermanShorthands } from '@/core/review/latex-plain';
+import { contextAround, findInSource, findOnPage, planPlainEdit, plainOf, readableSelection, selectionContext } from '@/core/review/match';
 import type { PdfHint, PdfRect } from '@/core/review/types';
 import type { Path } from '@/core/types';
 import { useTick } from '../common/ui';
@@ -186,7 +187,7 @@ export function useReviewUi(input: ReviewUiInput) {
       }
       const shown = readableSelection(selected.text);
       const pdf: PdfHint = { page: selected.page, rects: selected.rects, text: shown };
-      void findSourceOf(model, syncMap(), selected).then((found) => {
+      void findSourceOf(model, syncMap(), selected, pdfApi).then((found) => {
         setSelection({
           target: { source: found ? { path: found.path, from: found.from, to: found.to } : null, pdf, plain: found?.plain ?? shown, rough: found ? !found.exact : false },
           box: selected.box,
@@ -194,7 +195,7 @@ export function useReviewUi(input: ReviewUiInput) {
         });
       });
     },
-    [model, syncMap],
+    [model, syncMap, pdfApi],
   );
 
   const clearSelections = (): void => {
@@ -388,8 +389,17 @@ export function useReviewUi(input: ReviewUiInput) {
   };
 }
 
-/** Finds the source of a PDF selection: SyncTeX names the lines, the words narrow it down. */
-async function findSourceOf(model: WorkspaceModel, map: SyncTexMap | null, selected: SurfaceSelection): Promise<{ path: Path; from: number; to: number; exact: boolean; plain: string } | null> {
+/**
+ * Finds the source of a PDF selection: SyncTeX names the lines, the words
+ * narrow it down, and the words around the selection on the page tell apart
+ * places where the same words stand.
+ */
+async function findSourceOf(
+  model: WorkspaceModel,
+  map: SyncTexMap | null,
+  selected: SurfaceSelection,
+  pdfApi: RefObject<PdfApi | null>,
+): Promise<{ path: Path; from: number; to: number; exact: boolean; plain: string } | null> {
   if (!map) return null;
   const start = inverseSearch(map, selected.start.page, selected.start.x, selected.start.y);
   const end = inverseSearch(map, selected.end.page, selected.end.x, selected.end.y);
@@ -406,7 +416,11 @@ async function findSourceOf(model: WorkspaceModel, map: SyncTexMap | null, selec
   const last = Math.max(spot.line, end && end.file === path ? end.line : spot.line) + 3;
   const window = { from: lineStart(text, first), to: lineStart(text, last + 1) };
   const near = lineStart(text, spot.line);
-  const found = findInSource(text, selected.text, { window, near }) ?? findInSource(text, selected.text, { near });
+  const prefer = { from: near, to: lineStart(text, spot.line + 1) };
+  const api = pdfApi.current;
+  const items = api ? await api.pageText(selected.page).catch(() => null) : null;
+  const context = items ? selectionContext(items, selected.text, selected.start) : null;
+  const found = findInSource(text, selected.text, { window, near, prefer, context }) ?? findInSource(text, selected.text, { near, prefer, context });
   return found ? { path, ...found } : null;
 }
 
@@ -424,10 +438,12 @@ async function placeInPdf(thread: ResolvedThread, map: SyncTexMap | null, api: P
       byPage.set(spot.page, rects);
     }
     if (byPage.size > 0) {
-      const words = plainOf(fileText.slice(thread.at.from, thread.at.to));
+      const words = plainOf(fileText.slice(thread.at.from, thread.at.to), { german: usesGermanShorthands(fileText) });
+      // The words around the thread's words tell apart places on the page where the same words stand.
+      const context = words.length >= 2 ? contextAround(fileText, thread.at.from, thread.at.to) : null;
       const placed: { page: number; rects: PdfRect[] }[] = [];
       for (const [page, lines] of byPage) {
-        const found = words.length >= 2 ? findOnPage(await api.pageText(page), words, lines) : null;
+        const found = words.length >= 2 ? findOnPage(await api.pageText(page), words, lines, context) : null;
         placed.push({ page, rects: found ?? lines });
         // The words are on one page; once found there, the other pages are only SyncTeX's guess.
         if (found) return [{ page, rects: found }];

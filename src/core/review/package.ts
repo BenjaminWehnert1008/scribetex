@@ -13,6 +13,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { tryNormalizePath } from '../paths';
 import type { Millis, Path } from '../types';
+import { readPerson } from './review-doc';
 import type { Person } from './types';
 
 export const REVIEW_EXTENSION = '.scribetex';
@@ -100,28 +101,41 @@ export function writeComments(file: CommentsFile, siteUrl: string): Uint8Array {
   );
 }
 
+/** Limits for opening a file someone else made: a review copy holds text, one PDF and its SyncTeX. */
+const MAX_ENTRY_BYTES = 200 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 400 * 1024 * 1024;
+const MAX_ENTRIES = 5000;
+
 export function readReviewFile(bytes: Uint8Array): ReviewCopy | CommentsFile {
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(bytes);
-  } catch {
+    let count = 0;
+    let total = 0;
+    entries = unzipSync(bytes, {
+      filter: (file) => {
+        count++;
+        total += file.originalSize;
+        if (count > MAX_ENTRIES || file.originalSize > MAX_ENTRY_BYTES || total > MAX_TOTAL_BYTES) throw new ReviewFileError('This review file is too large to open.');
+        return true;
+      },
+    });
+  } catch (error) {
+    if (error instanceof ReviewFileError) throw error;
     throw new ReviewFileError('This is not a review file. It could not be opened.');
   }
   const rawManifest = entries[MANIFEST];
   if (!rawManifest) throw new ReviewFileError('This file has no review in it. Review files are made with "Send for review" or "Send comments back".');
-  let manifest: ReviewManifest;
+  let parsed: unknown;
   try {
-    manifest = JSON.parse(strFromU8(rawManifest)) as ReviewManifest;
+    parsed = JSON.parse(strFromU8(rawManifest));
   } catch {
     throw new ReviewFileError('The review file is damaged.');
   }
-  if (manifest.format !== FORMAT || typeof manifest.reviewId !== 'string') throw new ReviewFileError('This is not a review file.');
-  if (manifest.version !== 1) throw new ReviewFileError('This review file was made by a newer version of scribeTeX. Reload the page to get the newest version.');
+  const manifest = readManifest(parsed);
   const review = entries['review.ydoc'];
   if (!review) throw new ReviewFileError('The review file is damaged: it has no comments part.');
 
-  if (manifest.kind === 'comments') return { manifest: manifest as CommentsFile['manifest'], review };
-  if (manifest.kind !== 'review-copy') throw new ReviewFileError('This review file is of an unknown kind.');
+  if (manifest.kind === 'comments') return { manifest: { ...manifest, kind: 'comments' }, review };
   const mirror = entries['mirror.ydoc'];
   if (!mirror) throw new ReviewFileError('The review copy is damaged: it has no source part.');
   const files: { path: Path; text: string }[] = [];
@@ -132,17 +146,34 @@ export function readReviewFile(bytes: Uint8Array): ReviewCopy | CommentsFile {
   }
   const synctex = entries['document.synctex'];
   return {
-    manifest: {
-      ...manifest,
-      kind: 'review-copy',
-      knownPaths: Array.isArray(manifest.knownPaths) ? manifest.knownPaths : files.map((file) => file.path),
-      workDir: typeof manifest.workDir === 'string' ? manifest.workDir : '',
-      mainFile: manifest.mainFile ?? null,
-    },
+    manifest: { ...manifest, kind: 'review-copy', knownPaths: manifest.knownPaths.length > 0 ? manifest.knownPaths : files.map((file) => file.path) },
     files,
     mirror,
     review,
     pdf: entries['document.pdf'] ?? null,
     synctex: synctex ? strFromU8(synctex) : null,
+  };
+}
+
+/** Reads a manifest field by field, since the file may come from anyone. */
+function readManifest(value: unknown): ReviewManifest {
+  if (!value || typeof value !== 'object') throw new ReviewFileError('This is not a review file.');
+  const raw = value as Record<string, unknown>;
+  if (raw.format !== FORMAT || typeof raw.reviewId !== 'string' || raw.reviewId === '') throw new ReviewFileError('This is not a review file.');
+  if (raw.version !== 1) throw new ReviewFileError('This review file was made by a newer version of scribeTeX. Reload the page to get the newest version.');
+  if (raw.kind !== 'review-copy' && raw.kind !== 'comments') throw new ReviewFileError('This review file is of an unknown kind.');
+  const project = typeof raw.project === 'string' ? raw.project.trim().slice(0, 200) : '';
+  const mainFile = typeof raw.mainFile === 'string' ? tryNormalizePath(raw.mainFile) : null;
+  return {
+    format: FORMAT,
+    version: 1,
+    kind: raw.kind,
+    reviewId: raw.reviewId.slice(0, 200),
+    project: project === '' ? 'Untitled' : project,
+    from: readPerson(raw.from) ?? { id: 'unknown', name: 'Someone', color: 0 },
+    createdAt: typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : 0,
+    mainFile: mainFile ?? null,
+    workDir: typeof raw.workDir === 'string' ? raw.workDir : '',
+    knownPaths: Array.isArray(raw.knownPaths) ? raw.knownPaths.filter((path): path is string => typeof path === 'string').slice(0, 20000) : [],
   };
 }

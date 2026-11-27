@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { projectLatex } from './latex-plain';
-import { escapeLatex, findInSource, findOnPage, normalizeForMatch, planPlainEdit, plainOf, readableSelection } from './match';
+import { projectLatex, usesGermanShorthands } from './latex-plain';
+import { contextAround, escapeLatex, findInSource, findOnPage, normalizeForMatch, planPlainEdit, plainOf, readableSelection, selectionContext } from './match';
 import { SourceMirror } from './mirror';
 import { ReviewDoc } from './review-doc';
 import { applyChanges, diffText } from './text-diff';
@@ -135,7 +135,13 @@ describe('projectLatex', () => {
     expect(plain('This is \\emph{very} important.')).toBe('This is very important.');
     expect(plain('See \\cite{knuth} and Figure~\\ref{fig:a}.')).toBe('See and Figure .');
     expect(plain('\\section{Introduction}\\label{sec:intro} Text')).toBe('Introduction Text');
-    expect(plain('Gr\\"o\\ss e and "Ubung and na\\"\\i ve')).toBe('Größe and Übung and naïve');
+    expect(plain('Gr\\"o\\ss e and na\\"\\i ve')).toBe('Größe and naïve');
+    // babel's shorthands only where the document uses them: in English "also" is a word in quotes.
+    expect(projectLatex('f"ur die "Ubung', 0, { german: true }).text).toBe('für die Übung');
+    expect(plain('He said "also" twice')).toBe('He said "also" twice');
+    expect(usesGermanShorthands('Gr"o"se und f"ur')).toBe(true);
+    expect(usesGermanShorthands('\\usepackage[ngerman]{babel}')).toBe(true);
+    expect(usesGermanShorthands('He said "also" twice')).toBe(false);
     expect(plain('100\\% sure % a comment\nnext')).toBe('100% sure next');
     expect(plain('pages 1--5 --- really')).toBe('pages 1–5 — really');
     expect(plain('``quoted\'\'')).toBe('“quoted”');
@@ -250,3 +256,94 @@ describe('matching the PDF and the source', () => {
     expect(findOnPage(pieces, 'a p-value below')).not.toBeNull();
   });
 });
+
+/** The source after a planned change. */
+function applied(source: string, change: { from: number; to: number; insert: string } | null): string | null {
+  return change ? source.slice(0, change.from) + change.insert + source.slice(change.to) : null;
+}
+
+/** A PDF selection's plain text and the change a reviewer made to it, carried out on the source. */
+function suggestOn(source: string, selection: string, after: string): string | null {
+  const range = findInSource(source, selection);
+  if (!range) throw new Error(`"${selection}" not found`);
+  return applied(source, planPlainEdit(source, range, range.plain, after));
+}
+
+describe('finding the words a reviewer meant', () => {
+  it('tells apart the same words by the words around them on the page', () => {
+    const text = 'We first describe the method in detail. Then we test the method on real data and compare it with older work.';
+    const line = { str: text, left: 0, top: 100, right: 1000, bottom: 110 };
+    // The selection starts at the second "the method", about halfway along the line.
+    const context = selectionContext([line], 'the method', { x: 500, y: 105 })!;
+    expect(context.before.endsWith('then we test')).toBe(true);
+    expect(context.after.startsWith('on real data')).toBe(true);
+    const found = findInSource(text, 'the method', { near: 0, context })!;
+    expect(found.from).toBe(text.lastIndexOf('the method'));
+    expect(applied(text, planPlainEdit(text, found, 'the method', 'the new method'))).toBe(
+      'We first describe the method in detail. Then we test the new method on real data and compare it with older work.',
+    );
+  });
+
+  it('prefers the line SyncTeX names when the words around do not tell', () => {
+    const text = 'We trained the model.\nAfter a long and careful search we tuned the model again.';
+    const lineTwo = text.indexOf('\n') + 1;
+    const found = findInSource(text, 'the model', { near: lineTwo, prefer: { from: lineTwo, to: text.length } })!;
+    expect(found.from).toBe(text.lastIndexOf('the model'));
+  });
+
+  it('marks whole words on the page, at the place the source means', () => {
+    const str = 'This is what the data shows: the data is clear and the metadata is too.';
+    const items = [{ str, left: 0, top: 100, right: 1000, bottom: 110 }];
+    const [first] = findOnPage(items, 'is')!;
+    // Not the end of "This".
+    expect(first!.left).toBeGreaterThan(40);
+    expect(first!.left).toBeLessThan(120);
+    const source = 'This is what the data shows: the data is clear and the metadata is too.';
+    const at = source.indexOf('is clear');
+    const [second] = findOnPage(items, 'is', undefined, contextAround(source, at, at + 2))!;
+    expect(second!.left).toBeGreaterThan(450);
+    expect(second!.right).toBeLessThan(620);
+  });
+
+  it('keeps added words outside inline maths', () => {
+    const text = 'Then the value $x$ is small for all $n$ we tried.';
+    expect(suggestOn(text, 'the value x is small for all n we tried', 'the value of x is small for all n we tried')).toBe('Then the value of $x$ is small for all $n$ we tried.');
+    expect(suggestOn(text, 'the value x is small for all n we tried', 'the value x is small for all integers n we tried')).toBe('Then the value $x$ is small for all integers $n$ we tried.');
+    const p = 'We found a $p$-value below $0.01$.';
+    expect(suggestOn(p, 'a p-value below 0.01.', 'a p-value below 0.01, which is significant.')).toBe('We found a $p$-value below $0.01$, which is significant.');
+    expect(suggestOn(p, 'a p-value below 0.01.', 'a small p-value below 0.01.')).toBe('We found a small $p$-value below $0.01$.');
+    // Numbers inside a formula can still change; anything else there is made by hand.
+    expect(suggestOn(p, 'a p-value below 0.01.', 'a p-value below 0.05.')).toBe('We found a $p$-value below $0.05$.');
+    expect(suggestOn('then \\(n + 1\\) steps', 'then n + 1 steps', 'then n^2 + 1 steps')).toBeNull();
+  });
+
+  it('adds words after a command that prints a symbol, not into its name', () => {
+    expect(suggestOn('This is the Hamilton\\textendash{}Jacobi equation.', 'the Hamilton–Jacobi equation', 'the Hamilton–Bellman–Jacobi equation')).toBe(
+      'This is the Hamilton\\textendash{}Bellman–Jacobi equation.',
+    );
+    expect(suggestOn('From 1990\\textendash{}2000 on', 'From 1990–2000 on', 'From 1990–early 2000 on')).toBe('From 1990\\textendash{}early 2000 on');
+    // TeX swallows the space after \\LaTeX, so the PDF reads "LaTeXis"; adding the space needs {}.
+    expect(suggestOn('We use \\LaTeX is fun.', 'We use LaTeXis fun.', 'We use LaTeX is fun.')).toBe('We use \\LaTeX {} is fun.');
+  });
+
+  it('never joins two paragraphs', () => {
+    const text = 'We ran all the tests on the cluster. They all passed.\n\nNext, we discuss the limits of the method.';
+    expect(suggestOn(text, 'cluster. They all passed. Next, we', 'cluster. Next, we')).toBe('We ran all the tests on the cluster. \n\nNext, we discuss the limits of the method.');
+    expect(suggestOn('The results are good.\n\nNext we discuss them.', 'are good. Next we', 'are great. Then we')).toBeNull();
+  });
+
+  it('reads accents that a PDF without T1 fonts shows apart from their letters', () => {
+    expect(normalizeForMatch('Gr\u00a8oße f\u00a8ur').text).toBe(normalizeForMatch('Größe für').text);
+    expect(readableSelection('Gr\u00a8oße f\u00a8ur')).toBe('Größe für');
+    const text = 'Die Gr\\"o\\ss e der Stichprobe war f\\"ur die Studie zu klein.';
+    const found = findInSource(text, 'Gr\u00a8oße der Stichprobe war f\u00a8ur die')!;
+    expect(text.slice(found.from, found.to)).toBe('Gr\\"o\\ss e der Stichprobe war f\\"ur die');
+  });
+
+  it('reads \\@, \\verb and listings as the PDF prints them', () => {
+    expect(plainOf('etc.\\@ and so on')).toBe('etc. and so on');
+    expect(plainOf('type \\verb|50%| and $x$ here')).toBe('type 50% and x here');
+    expect(plainOf('before\n\\begin{verbatim}\nx = $1 % 2\n\\end{verbatim}\nafter $y$')).toBe('before x = $1 % 2 after y');
+  });
+});
+

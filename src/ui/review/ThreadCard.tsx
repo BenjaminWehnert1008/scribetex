@@ -49,8 +49,9 @@ export function ThreadCard(props: ThreadCardProps) {
   const open = thread.status === 'open';
   const mine = me !== null && thread.author.id === me.id;
   const suggestion = thread.kind === 'suggestion';
-  // Once decided, the card shows what was there when it was written.
-  const shown = open ? (props.currentText ?? thread.quote) : thread.quote;
+  // Once decided, or when its words were deleted, the card shows what was there when it was written.
+  const shown = open && !thread.gone ? (props.currentText ?? thread.quote) : thread.quote;
+  const anyway = thread.changed || thread.gone;
 
   const run = (action: () => void | Promise<void>): void => {
     props.withName(() => {
@@ -154,8 +155,13 @@ export function ThreadCard(props: ThreadCardProps) {
       <div className="rv-actions">
         {open && suggestion && isAuthor && canEdit && thread.replacement !== null && (
           <>
-            <button className="btn small primary" disabled={busy || !thread.at || thread.at.deleted} onClick={() => run(() => review.accept(thread.id))} title={thread.changed ? 'The text changed since; accepting replaces what is there now' : 'Make this change in the source'}>
-              <Check size={14} /> {thread.changed ? 'Accept anyway' : 'Accept'}
+            <button
+              className="btn small primary"
+              disabled={busy || !thread.at || thread.at.deleted}
+              onClick={() => run(() => review.accept(thread.id, { anyway }))}
+              title={thread.gone ? 'The words were deleted since; accepting puts the suggested text where they were' : thread.changed ? 'The text changed since; accepting replaces what is there now' : 'Make this change in the source'}
+            >
+              <Check size={14} /> {anyway ? 'Accept anyway' : 'Accept'}
             </button>
             <button className="btn small" disabled={busy} onClick={() => run(() => review.reject(thread.id))}>
               <X size={14} /> Reject

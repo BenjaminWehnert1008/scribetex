@@ -591,9 +591,12 @@ export class WorkspaceModel {
     const existing = new Set(state.entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path));
     const gone = state.tabs.filter((tab) => !existing.has(tab.path)).map((tab) => tab.path);
     this.session.removed(gone);
+    const reloaded: Path[] = [];
     for (const tab of state.tabs) {
-      if (tab.kind === 'text' && existing.has(tab.path)) await this.session.reload(tab.path);
+      if (tab.kind === 'text' && existing.has(tab.path) && (await this.session.reload(tab.path))) reloaded.push(tab.path);
     }
+    // The comments follow the text that came in (the review session read these files before they were reloaded).
+    if (reloaded.length > 0) void this.review?.verify(reloaded);
     this.state.set((current) => {
       const tabs = current.tabs.filter((tab) => existing.has(tab.path));
       const active = current.active && existing.has(current.active) ? current.active : (tabs.at(-1)?.path ?? null);

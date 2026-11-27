@@ -15,6 +15,32 @@ export interface Projection {
   /** Source range [start[i], end[i]) that produced character i of `text`; offsets include `base`. */
   start: number[];
   end: number[];
+  /** Inline maths ($...$ and \(...\)), in source offsets. */
+  math: MathSpan[];
+}
+
+export interface MathSpan {
+  /** Where the opening delimiter starts. */
+  open: number;
+  /** The formula, without its delimiters. */
+  from: number;
+  to: number;
+  /** Where the closing delimiter ends. */
+  close: number;
+}
+
+export interface ProjectOptions {
+  /** Read babel's German shorthands such as "a for ä (see usesGermanShorthands). */
+  german?: boolean;
+}
+
+/**
+ * Whether a document uses babel's German shorthands ("a for ä, "s for ß). Only
+ * then is "a read as ä: in English text "also" is a word in quotes. The
+ * shorthands show up inside words (f"ur, Gr"o"se), or babel names German.
+ */
+export function usesGermanShorthands(source: string): boolean {
+  return /\p{L}"[aouszAOU]/u.test(source) || /\\(?:usepackage|documentclass)\s*\[[^\]]*\b(?:n?german|n?austrian|n?swissgerman)\b/.test(source);
 }
 
 /** Commands that print a fixed text. */
@@ -129,7 +155,7 @@ const LETTER_ACCENTS: Record<string, string> = { c: '̧', v: '̌', u: '̆', H: '
 /** Symbol accents: \"a, \'e, ... */
 const SYMBOL_ACCENTS: Record<string, string> = { '"': '̈', "'": '́', '`': '̀', '^': '̂', '~': '̃', '=': '̄', '.': '̇' };
 /** Characters escaped by a backslash that print themselves. */
-const ESCAPED = new Set(['%', '&', '$', '#', '_', '{', '}', '@']);
+const ESCAPED = new Set(['%', '&', '$', '#', '_', '{', '}']);
 /** babel's German shorthands: "a is ä, "s is ß. */
 const GERMAN: Record<string, string> = { a: 'ä', o: 'ö', u: 'ü', A: 'Ä', O: 'Ö', U: 'Ü', s: 'ß', z: 'ß', '`': '„', "'": '“', '<': '«', '>': '»' };
 
@@ -152,14 +178,21 @@ const MATH_ENVIRONMENTS = new Set([
   'flalign*',
 ]);
 const SKIPPED_ENVIRONMENTS = new Set(['tikzpicture', 'comment', 'filecontents', 'filecontents*']);
+/** Environments whose content is printed as it is typed. */
+const VERBATIM_ENVIRONMENTS = new Set(['verbatim', 'verbatim*', 'Verbatim', 'Verbatim*', 'lstlisting', 'minted']);
 
 const isLetter = (char: string | undefined): boolean => char !== undefined && /[A-Za-z@]/.test(char);
 const isSpace = (char: string | undefined): boolean => char === ' ' || char === '\t' || char === '\n' || char === '\r';
 
-export function projectLatex(source: string, base = 0): Projection {
+export function projectLatex(source: string, base = 0, options: ProjectOptions = {}): Projection {
   const out = new Builder(base);
+  const math: MathSpan[] = [];
   let i = 0;
   const n = source.length;
+  /** Writes source characters as they are typed, as verbatim text prints them. */
+  const literal = (from: number, to: number): void => {
+    for (let j = from; j < to; j++) out.push(isSpace(source[j]) ? ' ' : source[j]!, j, j + 1);
+  };
 
   /** Index after the group that starts at `at` (a `{`), or `at` when there is none. */
   const skipGroup = (at: number): number => {
@@ -201,6 +234,7 @@ export function projectLatex(source: string, base = 0): Projection {
     const found = source.indexOf(close, from);
     const end = found < 0 ? n : found;
     const to = found < 0 ? n : found + close.length;
+    math.push({ open: base + i, from: base + from, to: base + end, close: base + to });
     const start = out.length;
     for (let j = from; j < end; j++) {
       const c = source[j]!;
@@ -273,7 +307,7 @@ export function projectLatex(source: string, base = 0): Projection {
       continue;
     }
 
-    if (char === '"') {
+    if (char === '"' && options.german) {
       const next = source[i + 1];
       if (next !== undefined && GERMAN[next]) {
         out.push(GERMAN[next], i, i + 2);
@@ -311,6 +345,11 @@ export function projectLatex(source: string, base = 0): Projection {
     }
     if (next === '(' || next === '[') {
       i = next === '(' ? inlineMath(i + 2, '\\)') : skipMath(i + 2, '\\]');
+      continue;
+    }
+    if (next === '@') {
+      // \@ only sets the space after a full stop.
+      i += 2;
       continue;
     }
     if (ESCAPED.has(next)) {
@@ -354,9 +393,36 @@ export function projectLatex(source: string, base = 0): Projection {
       }
     }
 
+    if (name === 'verb') {
+      // \verb|text| prints text as it is, whatever it holds.
+      const delimiter = source[j];
+      if (delimiter === undefined || isSpace(delimiter)) {
+        i = j;
+        continue;
+      }
+      let close = source.indexOf(delimiter, j + 1);
+      const lineEnd = source.indexOf('\n', j + 1);
+      if (close < 0 || (lineEnd >= 0 && lineEnd < close)) close = lineEnd < 0 ? n : lineEnd;
+      literal(j + 1, close);
+      i = Math.min(n, close + 1);
+      continue;
+    }
+
     if (name === 'begin' || name === 'end') {
       const groupEnd = skipGroup(j);
       const env = source.slice(j, groupEnd).replace(/^\s*\{|\}\s*$/g, '').trim();
+      if (name === 'begin' && VERBATIM_ENVIRONMENTS.has(env)) {
+        let contentFrom = skipOptional(groupEnd);
+        if (env === 'minted') contentFrom = skipGroup(contentFrom);
+        const close = `\\end{${env}}`;
+        const found = source.indexOf(close, contentFrom);
+        const contentTo = found < 0 ? n : found;
+        out.push(' ', i, contentFrom);
+        literal(contentFrom, contentTo);
+        out.push(' ', contentTo, found < 0 ? n : found + close.length);
+        i = found < 0 ? n : found + close.length;
+        continue;
+      }
       if (name === 'begin' && (MATH_ENVIRONMENTS.has(env) || SKIPPED_ENVIRONMENTS.has(env))) {
         const close = `\\end{${env}}`;
         const found = source.indexOf(close, groupEnd);
@@ -372,11 +438,13 @@ export function projectLatex(source: string, base = 0): Projection {
 
     const symbol = SYMBOLS[name];
     if (symbol !== undefined) {
-      out.push(symbol, i, j);
-      i = j;
+      let end = j;
       // A control word swallows the spaces after it ("\\ss e" is "ße"); "{}" ends it without a space.
-      if (source[i] === '{' && source[i + 1] === '}') i += 2;
-      else while (i < n && (source[i] === ' ' || source[i] === '\t')) i++;
+      if (source[end] === '{' && source[end + 1] === '}') end += 2;
+      else while (end < n && (source[end] === ' ' || source[end] === '\t')) end++;
+      // The symbol covers what ends the command too, so text added after it goes after that.
+      out.push(symbol, i, end);
+      i = end;
       continue;
     }
 
@@ -400,7 +468,7 @@ export function projectLatex(source: string, base = 0): Projection {
     // TeX swallows the spaces after a control word.
     while (i < n && (source[i] === ' ' || source[i] === '\t')) i++;
   }
-  return out.result();
+  return { ...out.result(), math };
 }
 
 function accentTarget(source: string, at: number): { letter: string | null; end: number } {
@@ -457,6 +525,6 @@ class Builder {
   }
 
   result(): Projection {
-    return { text: this.#text, start: this.#start, end: this.#end };
+    return { text: this.#text, start: this.#start, end: this.#end, math: [] };
   }
 }

@@ -10,7 +10,7 @@ import * as Y from 'yjs';
 import { Emitter } from '../store';
 import type { Millis } from '../types';
 import type { Anchor } from './mirror';
-import type { NewThread, PdfHint, Person, Reply, Thread, ThreadKind, ThreadStatus } from './types';
+import type { NewThread, PdfHint, PdfRect, Person, Reply, Thread, ThreadKind, ThreadStatus } from './types';
 
 /** Transaction origin of changes made on this computer. */
 export const LOCAL = 'local';
@@ -164,6 +164,12 @@ export class ReviewDoc {
   }
 }
 
+/*
+ * Everything below reads values that may come from someone else's file, so
+ * each one is checked: a damaged or odd file shows as an empty comment, never
+ * as a broken page.
+ */
+
 function readThread(id: string, map: Y.Map<unknown>): Thread {
   const fileId = map.get('fileId');
   const start = map.get('start');
@@ -172,30 +178,79 @@ function readThread(id: string, map: Y.Map<unknown>): Thread {
     typeof fileId === 'string' && start instanceof Uint8Array && end instanceof Uint8Array ? { fileId, start, end } : null;
   const replies = map.get('replies');
   const kind = map.get('kind') === 'suggestion' ? 'suggestion' : 'comment';
+  const replacement = map.get('replacement');
+  const path = map.get('path');
   return {
     id,
     kind: kind as ThreadKind,
     anchor,
-    path: (map.get('path') as string | null) ?? null,
-    quote: (map.get('quote') as string | undefined) ?? '',
-    replacement: (map.get('replacement') as string | null | undefined) ?? null,
-    plain: (map.get('plain') as Thread['plain'] | undefined) ?? null,
-    body: (map.get('body') as string | undefined) ?? '',
-    author: readPerson(map.get('author')) ?? { id: 'unknown', name: 'Someone', color: 0 },
-    createdAt: (map.get('createdAt') as number | undefined) ?? 0,
+    path: typeof path === 'string' ? path : null,
+    quote: text(map.get('quote')),
+    replacement: typeof replacement === 'string' ? replacement : null,
+    plain: readPlain(map.get('plain')),
+    body: text(map.get('body')),
+    author: readPerson(map.get('author')) ?? SOMEONE,
+    createdAt: time(map.get('createdAt')) ?? 0,
     status: readStatus(map.get('status')),
     statusBy: readPerson(map.get('statusBy')),
-    statusAt: (map.get('statusAt') as number | null | undefined) ?? null,
-    pdf: (map.get('pdf') as PdfHint | null | undefined) ?? null,
-    replies: replies instanceof Y.Array ? (replies.toArray() as Reply[]) : [],
+    statusAt: time(map.get('statusAt')),
+    pdf: readPdfHint(map.get('pdf')),
+    replies: replies instanceof Y.Array ? replies.toArray().map(readReply).filter((reply): reply is Reply => reply !== null) : [],
   };
 }
 
-function readPerson(value: unknown): Person | null {
+const SOMEONE: Person = { id: 'unknown', name: 'Someone', color: 0 };
+/** Colours in the review palette (review.css). */
+const COLORS = 8;
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function time(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** A person as a file names them, or null when the value is not one. */
+export function readPerson(value: unknown): Person | null {
   if (!value || typeof value !== 'object') return null;
-  const person = value as Partial<Person>;
+  const person = value as Record<string, unknown>;
   if (typeof person.id !== 'string' || typeof person.name !== 'string') return null;
-  return { id: person.id, name: person.name, color: typeof person.color === 'number' ? person.color : 0 };
+  const name = person.name.trim().slice(0, 60);
+  const color = person.color;
+  return {
+    id: person.id.slice(0, 100),
+    name: name === '' ? 'Someone' : name,
+    color: typeof color === 'number' && Number.isInteger(color) && color >= 0 && color < COLORS ? color : 0,
+  };
+}
+
+function readPlain(value: unknown): Thread['plain'] {
+  if (!value || typeof value !== 'object') return null;
+  const plain = value as Record<string, unknown>;
+  return typeof plain.before === 'string' && typeof plain.after === 'string' ? { before: plain.before, after: plain.after } : null;
+}
+
+function readPdfHint(value: unknown): PdfHint | null {
+  if (!value || typeof value !== 'object') return null;
+  const hint = value as Record<string, unknown>;
+  if (typeof hint.page !== 'number' || !Number.isInteger(hint.page) || hint.page < 1 || !Array.isArray(hint.rects)) return null;
+  const rects = hint.rects
+    .slice(0, 200)
+    .filter((rect): rect is PdfRect => {
+      if (!rect || typeof rect !== 'object') return false;
+      const box = rect as Record<string, unknown>;
+      return ['left', 'top', 'right', 'bottom'].every((side) => typeof box[side] === 'number' && Number.isFinite(box[side]));
+    })
+    .map((rect) => ({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }));
+  return { page: hint.page, rects, text: text(hint.text) };
+}
+
+function readReply(value: unknown): Reply | null {
+  if (!value || typeof value !== 'object') return null;
+  const reply = value as Record<string, unknown>;
+  if (typeof reply.id !== 'string' || typeof reply.text !== 'string') return null;
+  return { id: reply.id, author: readPerson(reply.author) ?? SOMEONE, text: reply.text, at: time(reply.at) ?? 0 };
 }
 
 function readStatus(value: unknown): ThreadStatus {

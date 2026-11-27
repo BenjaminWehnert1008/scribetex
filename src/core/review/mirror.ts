@@ -46,10 +46,15 @@ function newFileId(): string {
   return `f${Date.now().toString(36)}${random[0]!.toString(36)}${random[1]!.toString(36)}${idCounter.toString(36)}`;
 }
 
+/** How long a file made here counts as new, for telling a rename in the folder from a new file. */
+const FRESH_MS = 60_000;
+
 export class SourceMirror {
   readonly doc: Y.Doc;
   readonly #files: Y.Map<FileMap>;
   #index: Map<Path, string> | null = null;
+  /** Files made in this mirror lately, with the time. */
+  readonly #fresh = new Map<string, number>();
 
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
@@ -90,7 +95,7 @@ export class SourceMirror {
   /** Makes the mirror hold `text` for `path`, creating the file when it is new. */
   setText(path: Path, text: string): void {
     this.doc.transact(() => {
-      const id = this.fileId(path) ?? this.#revive(path) ?? this.#create(path, '');
+      const id = this.fileId(path) ?? this.#revive(path) ?? this.#movedHere(path, text) ?? this.#create(path, '');
       const ytext = this.#text(id)!;
       const change = diffText(ytext.toString(), text);
       if (change) applyTo(ytext, [change]);
@@ -132,10 +137,22 @@ export class SourceMirror {
   remove(paths: readonly Path[]): void {
     if (paths.length === 0) return;
     this.doc.transact(() => {
-      for (const file of this.#files.values()) {
+      for (const [id, file] of [...this.#files]) {
         if (file.get('deleted') === true) continue;
         const path = file.get('path') as Path;
-        if (paths.some((gone) => path === gone || path.startsWith(`${gone}/`))) file.set('deleted', true);
+        if (!paths.some((gone) => path === gone || path.startsWith(`${gone}/`))) continue;
+        file.set('deleted', true);
+        // A rename in a linked folder arrives as a new file, then the old one gone:
+        // the old one, which the comments point into, takes the new one's place.
+        const text = this.#text(id)!.toString();
+        const copy = text === '' ? undefined : [...this.#fresh.keys()].find((fresh) => fresh !== id && this.#isFresh(fresh) && this.#files.get(fresh)?.get('deleted') !== true && this.#text(fresh)?.toString() === text);
+        if (copy !== undefined) {
+          const target = this.#files.get(copy)!;
+          target.set('deleted', true);
+          file.set('path', target.get('path'));
+          file.set('deleted', false);
+          this.#fresh.delete(copy);
+        }
       }
       this.#index = null;
     }, LOCAL);
@@ -213,8 +230,37 @@ export class SourceMirror {
     return value instanceof Y.Text ? value : null;
   }
 
+  /**
+   * A new path whose text is exactly that of a deleted file: the file was
+   * renamed or moved (in a linked folder: the old one went first), so it keeps
+   * its id and its comments.
+   */
+  #movedHere(path: Path, text: string): string | null {
+    if (text === '') return null;
+    let found: string | null = null;
+    for (const [id, file] of this.#files) {
+      if (file.get('deleted') === true && this.#text(id)?.toString() === text && (found === null || id < found)) found = id;
+    }
+    if (found !== null) {
+      const file = this.#files.get(found)!;
+      file.set('path', path);
+      file.set('deleted', false);
+      this.#index = null;
+    }
+    return found;
+  }
+
+  #isFresh(id: string): boolean {
+    const made = this.#fresh.get(id);
+    if (made === undefined) return false;
+    if (Date.now() - made <= FRESH_MS) return true;
+    this.#fresh.delete(id);
+    return false;
+  }
+
   #create(path: Path, text: string): string {
     const id = newFileId();
+    this.#fresh.set(id, Date.now());
     const file = new Y.Map<unknown>();
     file.set('path', path);
     file.set('text', new Y.Text(text));
