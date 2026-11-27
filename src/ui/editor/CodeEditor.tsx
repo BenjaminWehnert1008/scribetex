@@ -229,7 +229,11 @@ export function CodeEditor(props: CodeEditorProps) {
       ]),
       readOnlyExtension.of([]),
       reviewMarks({
-        mode: () => (latest.current.readOnly ? 'locked' : (latest.current.reviewMode ?? 'edit')),
+        // A review mode wins over read-only: in a review copy, typing over a selection starts a comment or a suggestion.
+        mode: () => {
+          const mode = latest.current.reviewMode ?? 'edit';
+          return mode !== 'edit' ? mode : latest.current.readOnly ? 'locked' : 'edit';
+        },
         onMarkClick: (id, box) => latest.current.onMarkClick?.(id, box),
         onType: (view, text) => {
           const current = shown.current;
@@ -349,7 +353,7 @@ export function CodeEditor(props: CodeEditorProps) {
     // In a review mode the text can be selected and the cursor moved, but typing makes a comment or a suggestion.
     view.dispatch({
       effects: readOnlyCompartment.current.reconfigure(
-        readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : reviewMode !== 'edit' ? [EditorState.readOnly.of(true)] : [],
+        reviewMode !== 'edit' ? [EditorState.readOnly.of(true)] : readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
       ),
     });
     view.dispatch(setDiagnostics(view.state, toEditorDiagnostics(view.state, diagnostics, path)));

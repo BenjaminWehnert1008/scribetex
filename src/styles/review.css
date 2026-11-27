@@ -15,6 +15,9 @@
   --rv-5: #13829a;
   --rv-6: #5a8712;
   --rv-7: #52698a;
+  /* Inserted text in a suggestion's card: green in every colour scheme, as in a diff. */
+  --rv-ins: #1d7a4f;
+  --rv-ins-soft: #dcf0e4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +30,8 @@
     --rv-5: #5cc4da;
     --rv-6: #a6cc5a;
     --rv-7: #9fb3cc;
+    --rv-ins: #6fd39d;
+    --rv-ins-soft: #1b3a2a;
   }
 }
 
@@ -39,6 +44,8 @@
   --rv-5: #5cc4da;
   --rv-6: #a6cc5a;
   --rv-7: #9fb3cc;
+  --rv-ins: #6fd39d;
+  --rv-ins-soft: #1b3a2a;
 }
 
 /* In the source editor */
@@ -189,7 +196,7 @@
   text-decoration-line: line-through; text-decoration-thickness: 1.5px;
 }
 .rv-diff ins {
-  color: var(--accent); background: var(--accent-soft); border-radius: 3px; padding: 0 2px;
+  color: var(--rv-ins); background: var(--rv-ins-soft); border-radius: 3px; padding: 0 2px;
   text-decoration-line: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px;
 }
 .rv-quote {

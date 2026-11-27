@@ -39,33 +39,35 @@ async function typeInEditor(page: Page, text: string): Promise<void> {
 
 /** Selects `words` with the mouse, in the text under `root` (the source editor or the PDF's text). */
 async function selectWords(page: Page, root: string, words: string): Promise<void> {
-  const box = await page.evaluate(
-    ({ root, words }) => {
-      const nodes: Text[] = [];
-      for (const element of document.querySelectorAll(root)) {
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
-      }
-      const places: [Text, number][] = [];
-      let joined = '';
-      for (const node of nodes) {
-        for (let index = 0; index < node.data.length; index++) places.push([node, index]);
-        joined += node.data;
-      }
-      const at = joined.indexOf(words);
-      if (at < 0) return null;
-      const rectOf = ([node, index]: [Text, number]): DOMRect => {
-        const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + 1);
-        return range.getBoundingClientRect();
-      };
-      const first = rectOf(places[at]!);
-      const last = rectOf(places[at + words.length - 1]!);
-      return { x1: first.left + 0.5, y1: first.top + first.height / 2, x2: last.right - 0.5, y2: last.top + last.height / 2 };
-    },
-    { root, words },
-  );
+  const find = ({ root, words, scroll }: { root: string; words: string; scroll: boolean }) => {
+    const nodes: Text[] = [];
+    for (const element of document.querySelectorAll(root)) {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+    }
+    const places: [Text, number][] = [];
+    let joined = '';
+    for (const node of nodes) {
+      for (let index = 0; index < node.data.length; index++) places.push([node, index]);
+      joined += node.data;
+    }
+    const at = joined.indexOf(words);
+    if (at < 0) return null;
+    // Words below the fold are scrolled into view first; a drag only selects what can be seen.
+    if (scroll) places[at]![0].parentElement?.scrollIntoView({ block: 'center' });
+    const rectOf = ([node, index]: [Text, number]): DOMRect => {
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 1);
+      return range.getBoundingClientRect();
+    };
+    const first = rectOf(places[at]!);
+    const last = rectOf(places[at + words.length - 1]!);
+    return { x1: first.left + 0.5, y1: first.top + first.height / 2, x2: last.right - 0.5, y2: last.top + last.height / 2 };
+  };
+  await page.evaluate(find, { root, words, scroll: true });
+  await page.waitForTimeout(150);
+  const box = await page.evaluate(find, { root, words, scroll: false });
   if (!box) throw new Error(`"${words}" was not found in ${root}`);
   await page.mouse.move(box.x1, box.y1);
   await page.mouse.down();
@@ -572,6 +574,16 @@ test.describe('with the LaTeX engine', () => {
     await reviewer.getByRole('dialog', { name: 'New comment' }).getByLabel('Comment').fill('Please add a motivation first.');
     await reviewer.keyboard.press('Enter');
     await expect(reviewer.locator('.cm-rv-comment')).toHaveText('Start writing here');
+
+    // In Suggesting mode, typing over words of the source starts a suggestion; the copy itself does not change.
+    await reviewer.getByRole('radio', { name: 'Suggesting' }).first().click();
+    await selectWords(reviewer, '.cm-content', 'referenced by its label');
+    await reviewer.keyboard.type('n');
+    const typed = reviewer.getByRole('dialog', { name: 'Suggest a change' });
+    await expect(typed.getByLabel('Suggested text')).toHaveValue('n');
+    await reviewer.keyboard.press('Escape');
+    await expect(typed).toBeHidden();
+    await expect(reviewer.locator('.cm-content')).toContainText('is referenced by its label');
 
     await selectWords(reviewer, '.pdf-page .textLayer', 'short summary');
     await bar.getByRole('button', { name: 'Suggest a change' }).click();
