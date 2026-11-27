@@ -441,9 +441,16 @@ test.describe('with the LaTeX engine', () => {
       await start(page);
       await createFromCommunity(page, template.name, template.name);
       await expect(row(page, 'TEMPLATE-LICENSE.txt')).toBeVisible();
-      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
-      await expect(page.locator('.statusbar')).toContainText('Compiled in');
-      await expect(page.locator('.statusbar')).not.toContainText(/\b[1-9]\d* errors?\b/);
+      const status = page.locator('.statusbar');
+      await expect(status).toContainText(/Compiled in|The last compile failed/, { timeout: 240_000 });
+      // A failed compile shows no PDF. Its problems go into the report, so the
+      // workflow log says what is missing instead of only "no PDF".
+      if (!(await status.innerText()).includes('Compiled in')) {
+        await status.locator('button').first().click();
+        expect(await page.locator('.problem').allInnerTexts(), `problems of ${template.name}`).toEqual([]);
+      }
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible();
+      await expect(status).not.toContainText(/\b[1-9]\d* errors?\b/);
     });
   }
 });

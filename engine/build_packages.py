@@ -22,6 +22,14 @@ import tarfile
 
 KEEP = ('texmf-dist/tex/', 'texmf-dist/fonts/', 'texmf-dist/bibtex/', 'texmf-dist/makeindex/')
 SKIP_SUFFIXES = ('x86_64-linux', 'aarch64-linux', 'universal-darwin', 'windows', 'infra')
+# Files that TeX, BibTeX, biblatex and pdfTeX's font map ask for by name. The
+# engine finds the package of a missing file in bundles/file-to-package.json,
+# which comes with the runtime and lists macro files, but no bibliography or
+# biblatex styles and no encoding files. A style that no .sty brings along,
+# like apalike2.bst, or an encoding file that another package's fonts use,
+# like ntx-ec-tlf.enc (newtx) for newpx, so had no package to fetch. These
+# files of the hosted packages are added to that index.
+BY_NAME = ('.sty', '.cls', '.def', '.fd', '.cfg', '.clo', '.ldf', '.tex', '.bst', '.bbx', '.cbx', '.lbx', '.dbx', '.enc')
 
 
 def parse_tlpdb(path):
@@ -54,6 +62,26 @@ def parse_tlpdb(path):
     return pkgs
 
 
+def index_hosted_files(out, runtime, hosted):
+    """Adds the files of the hosted packages that are asked for by name to the file index (see BY_NAME)."""
+    path = os.path.join(out, 'bundles', 'file-to-package.json')
+    with open(path, encoding='utf-8') as handle:
+        files = json.load(handle)
+    # A file in the runtime bundles is found without fetching a package.
+    with open(os.path.join(runtime, 'file-manifest.json'), encoding='utf-8') as handle:
+        bundled = {entry.rsplit('/', 1)[-1] for entry in json.load(handle)}
+    added = 0
+    for name, paths in hosted:
+        for entry in paths:
+            base = entry.rsplit('/', 1)[-1]
+            if base.endswith(BY_NAME) and base not in files and base not in bundled:
+                files[base] = name
+                added += 1
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(files, handle)
+    return added
+
+
 def main():
     if len(sys.argv) < 4:
         sys.exit(__doc__)
@@ -69,6 +97,7 @@ def main():
     os.makedirs(os.path.join(out, 'bundles'))
 
     index = []
+    hosted = []
     for name, pkg in sorted(pkgs.items()):
         if only and name not in only:
             continue
@@ -91,6 +120,7 @@ def main():
         # No file extension: the engine requests /api/texlive/<name>.
         with open(os.path.join(api, name), 'wb') as dst:
             dst.write(packed)
+        hosted.append((name, files))
         index.append({
             'name': name,
             'revision': pkg['revision'],
@@ -101,6 +131,8 @@ def main():
 
     for name in ('file-to-package.json', 'font-name-to-package.json'):
         shutil.copyfile(os.path.join(runtime, name), os.path.join(out, 'bundles', name))
+    added = index_hosted_files(out, runtime, hosted)
+    print(f'file index: {added} files of the hosted packages added')
     with open(os.path.join(out, 'index.json'), 'w', encoding='utf-8') as handle:
         json.dump(index, handle, indent=1)
     with open(os.path.join(out, 'MANIFEST.tsv'), 'w', encoding='utf-8') as handle:
