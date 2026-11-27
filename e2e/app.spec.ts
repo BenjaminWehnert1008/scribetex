@@ -7,11 +7,11 @@ import { FakeGitHub } from '../src/core/github/fake-github';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const engineReady = fs.existsSync(path.join(root, 'dist/engine/runtime/runtime.json'));
 
+/** Opens the home screen as someone who has already read where the work is saved. */
 async function start(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('latex-editor:storage-notice-seen', '1'));
   await page.goto('./');
-  const notice = page.getByRole('dialog', { name: 'Where your work is saved' });
-  await expect(notice).toBeVisible();
-  await notice.getByRole('button', { name: 'I understand' }).click();
+  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
 }
 
 async function createProject(page: Page, name: string, template: string): Promise<void> {
@@ -79,15 +79,23 @@ const tree = (page: Page) => page.getByRole('tree', { name: 'Project files' });
 const row = (page: Page, name: string) => tree(page).getByRole('treeitem', { name, exact: true });
 const panel = (page: Page, name: string) => page.getByRole('navigation', { name: 'Side panels' }).getByRole('button', { name, exact: true });
 
-test('tells a new visitor where the work is saved', async ({ page }) => {
+test('tells where the work is saved when the first project opens, not on the home screen', async ({ page }) => {
   await page.goto('./');
   const notice = page.getByRole('dialog', { name: 'Where your work is saved' });
+  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
+  await expect(notice).toBeHidden();
+  await expect(page.getByRole('note')).toHaveCount(0);
+
+  await createProject(page, 'First', 'Article');
   await expect(notice).toContainText('Your work stays on this computer.');
   await expect(notice).toContainText('nothing is backed up to a cloud unless you connect one yourself');
   await notice.getByRole('button', { name: 'I understand' }).click();
-  await page.reload();
-  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
   await expect(notice).toBeHidden();
+
+  await page.getByRole('button', { name: 'All projects' }).click();
+  await createProject(page, 'Second', 'Article');
+  await expect(notice).toBeHidden();
+  await page.getByRole('button', { name: 'All projects' }).click();
   await page.getByRole('button', { name: 'Where is my work saved?' }).click();
   await expect(notice).toBeVisible();
 });
@@ -98,6 +106,10 @@ test('suggests Chrome or Edge and guides through the GitHub setup where folders 
     Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });
   });
   await page.goto('./');
+  await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
+  await expect(page.getByRole('note')).toHaveCount(0);
+
+  await createProject(page, 'Thesis', 'Article');
   const notice = page.getByRole('dialog', { name: 'Where your work is saved' });
   await expect(notice).toContainText('Tip: for saving to a folder, open scribeTeX in Chrome or Edge.');
   await expect(notice).toContainText('equally safe');
@@ -111,12 +123,17 @@ test('suggests Chrome or Edge and guides through the GitHub setup where folders 
   await expect(forms.nth(1)).toHaveAttribute('href', /^https:\/\/github\.com\/settings\/personal-access-tokens\/new\?.*contents=write/);
   await guide.getByRole('button', { name: 'Got it' }).click();
   await expect(guide).toBeHidden();
+  // The guide leaves the person where the setup starts.
+  await expect(page.getByRole('button', { name: 'Set up…' })).toBeVisible();
+});
 
-  // The first-visit notice counts as seen; the home screen keeps the tip and the guide.
-  await page.reload();
-  await expect(notice).toBeHidden();
-  await page.getByRole('note').getByRole('button', { name: 'Show me how, step by step' }).click();
-  await expect(guide).toBeVisible();
+test('asks people to star the project and to send feedback', async ({ page }) => {
+  await start(page);
+  const support = page.getByRole('region', { name: 'Support scribeTeX' });
+  await expect(support).toContainText('100% free');
+  await expect(support.getByRole('link', { name: 'Star on GitHub' })).toHaveAttribute('href', 'https://github.com/BenjaminWehnert1008/scribetex');
+  await expect(support.getByRole('link', { name: 'Report a bug' })).toHaveAttribute('href', /\/issues\/new/);
+  await expect(support.getByRole('link', { name: 'Suggest an improvement' })).toHaveAttribute('href', /\/issues\/new/);
 });
 
 test('shows a picture of every built-in template when a project is started', async ({ page }) => {

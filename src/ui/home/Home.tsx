@@ -1,4 +1,4 @@
-import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, MessageSquareText, Plus } from 'lucide-react';
+import { Bug, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, MessageSquareText, Plus, Star } from 'lucide-react';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   APP_NAME,
@@ -20,7 +20,7 @@ import type { DirHandle } from '@/core/fsa/disk';
 import { FolderSync } from '@/core/fsa/sync';
 import type { ProjectId, ProjectMeta } from '@/core/types';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
-import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
+import { markNoticeSeen, StorageNoticeDialog } from './notices';
 import { RestoreDialog } from './RestoreDialog';
 import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { NewProjectDialog } from './NewProjectDialog';
@@ -32,7 +32,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [browser] = useState(detectBrowser);
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState(() => !noticeSeen());
+  const [notice, setNotice] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; above: number; project: ProjectMeta } | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -145,12 +145,6 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
         </h1>
         <p className="home-lead">{APP_TAGLINE}</p>
 
-        {!browser.folderAccess && (
-          <div className="notice-card" role="note">
-            <StorageNoticeText browser={browser} onGuide={() => setGuide(true)} />
-          </div>
-        )}
-
         <div className="home-actions">
           <button className="btn primary" onClick={() => setCreating(true)}>
             <Plus size={15} /> New project
@@ -249,25 +243,27 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
         </ul>
 
         <section className="about" aria-labelledby="about-title">
-          <h2 id="about-title">The idea</h2>
+          <h2 id="about-title">Support {APP_NAME}</h2>
           <p>
-            {APP_NAME} is a free, open-source LaTeX editor for people who want to write without an account, a subscription or a
-            server. Projects can have real folders, they are saved as you type, and they can live in a folder on your own computer.
-            The PDF is compiled right here in your browser.
+            {APP_NAME} is <b>100% free</b> and open source: no account, no subscription, no ads and no server. Projects can have real folders,
+            they are saved as you type, and they can live in a folder on your own computer. The PDF is compiled right here in your browser.
           </p>
           <p>
-            It is meant to be a community-driven tool, shaped by the people who use it. If something breaks, feels clumsy or is
-            missing, please open an issue on GitHub. Every report helps, and so does code.
+            The easiest way to support the project is to <b>give it a star on GitHub</b>. It takes one click and helps other people find it.
+          </p>
+          <p>
+            Your feedback decides what gets better next. If something breaks, feels clumsy or is missing, please open an issue on GitHub. Every
+            report helps, and so does code.
           </p>
           <div className="about-actions">
+            <a className="btn primary" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+              <Star size={15} /> Star on GitHub
+            </a>
             <a className="btn" href={NEW_BUG_URL} target="_blank" rel="noopener noreferrer">
               <Bug size={15} /> Report a bug
             </a>
             <a className="btn" href={NEW_IDEA_URL} target="_blank" rel="noopener noreferrer">
               <Lightbulb size={15} /> Suggest an improvement
-            </a>
-            <a className="btn" href={REPO_URL} target="_blank" rel="noopener noreferrer">
-              <Code size={15} /> Source on GitHub
             </a>
           </div>
         </section>

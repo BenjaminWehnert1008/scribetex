@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildProjectIndex, type ProjectIndex } from '@/app/project-index';
-import { notify, reportError, type Services } from '@/app/services';
+import { detectBrowser, notify, reportError, type Services } from '@/app/services';
 import type { SidePanel, Tab, WorkspaceModel } from '@/app/workspace-model';
 import { NO_MAIN_FILE } from '@/core/engine/compile';
 import type { EngineStatus } from '@/core/engine/types';
@@ -42,6 +42,8 @@ import { BrowserTip } from '../pdf/BrowserAdvice';
 import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
 import { GitHubCard } from './GitHubCard';
+import { GitHubGuideDialog } from './GitHubGuide';
+import { markNoticeSeen, noticeSeen, StorageNoticeDialog } from '../home/notices';
 import { HistoryPanel, OutlinePanel, StoragePanel } from './Panels';
 import { APP_NAME } from '@/app/brand';
 import { AskClaude } from './AskClaude';
@@ -333,6 +335,10 @@ export function Workspace(props: WorkspaceProps) {
   const [asking, setAsking] = useState<{ problem: Diagnostic | null } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; above: number } | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(model.recovered.length > 0);
+  // Where the work is saved is explained once, when the first project is opened.
+  const [browser] = useState(detectBrowser);
+  const [notice, setNotice] = useState(() => !noticeSeen());
+  const [guide, setGuide] = useState(false);
   const [index, setIndex] = useState<ProjectIndex | null>(null);
   const indexRef = useRef<ProjectIndex | null>(null);
 
@@ -858,6 +864,22 @@ export function Workspace(props: WorkspaceProps) {
       {sendingBack && (
         <SendBackDialog model={model} count={review.state.threads.filter((thread) => thread.author.id === review.state.me?.id).length} onClose={() => setSendingBack(false)} />
       )}
+      {notice && (
+        <StorageNoticeDialog
+          browser={browser}
+          onClose={() => {
+            markNoticeSeen();
+            setNotice(false);
+          }}
+          onGuide={() => {
+            markNoticeSeen();
+            setNotice(false);
+            model.setPanel('storage');
+            setGuide(true);
+          }}
+        />
+      )}
+      {guide && <GitHubGuideDialog where="project" onClose={() => setGuide(false)} />}
       {settingsOpen && (
         <ProjectSettings model={model} project={state.project} texFiles={texFiles} detected={compile.mainFile} onClose={() => setSettingsOpen(false)} />
       )}
