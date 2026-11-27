@@ -32,6 +32,7 @@ import type { Diagnostic, Path, ProjectMeta } from '@/core/types';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { CodeEditor } from '../editor/CodeEditor';
 import { useStore } from '../hooks/useStore';
+import { BrowserTip } from '../pdf/BrowserAdvice';
 import { PdfView } from '../pdf/PdfView';
 import type { PagePoint, PageRect } from '../pdf/pdf-surface';
 import { FileTree } from './FileTree';
@@ -525,6 +526,7 @@ export function Workspace(props: WorkspaceProps) {
             </button>
           </div>
         )}
+        <BrowserTip />
       </div>
 
       <header className="topbar">
