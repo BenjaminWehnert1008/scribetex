@@ -38,6 +38,7 @@ import { type PdfApi, PdfView } from '../pdf/PdfView';
 import { isReviewFileName, ModeSwitch, ReviewPanel, SendBackDialog, SendForReviewDialog, takeReviewFile } from '../review/ReviewPanel';
 import { useReviewUi } from '../review/useReviewUi';
 import type { PagePoint, PageRect } from '../pdf/pdf-surface';
+import { BrowserTip } from '../pdf/BrowserAdvice';
 import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
 import { GitHubCard } from './GitHubCard';
@@ -566,6 +567,7 @@ export function Workspace(props: WorkspaceProps) {
             </button>
           </div>
         )}
+        <BrowserTip />
       </div>
 
       <header className="topbar">

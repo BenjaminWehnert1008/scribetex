@@ -6,21 +6,8 @@
  * the document arrives, each page keeps showing its old picture until the new
  * one is drawn, so recompiling does not flicker and the scroll position stays.
  */
-import type * as PdfjsModule from 'pdfjs-dist';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-type Pdfjs = typeof PdfjsModule;
-
-let pdfjsPromise: Promise<Pdfjs> | null = null;
-
-function loadPdfjs(): Promise<Pdfjs> {
-  pdfjsPromise ??= import('pdfjs-dist').then((pdfjs) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    return pdfjs;
-  });
-  return pdfjsPromise;
-}
+import { loadPdfjs } from './pdfjs';
 
 export type Zoom = 'fit' | number;
 
@@ -107,6 +94,7 @@ export class PdfSurface {
   readonly #scroller: HTMLElement;
   readonly #host: HTMLElement;
   readonly #onInfo: (info: SurfaceInfo) => void;
+  readonly #onDrawFailed: (error: unknown) => void;
   readonly #observer: IntersectionObserver;
   readonly #resize: ResizeObserver;
   #doc: PDFDocumentProxy | null = null;
@@ -124,11 +112,15 @@ export class PdfSurface {
   /** Settles when the document being loaded is shown. */
   #shown: Promise<void> = Promise.resolve();
 
-  /** `scroller` scrolls; the page elements are added to `host`, which lies inside it. */
-  constructor(scroller: HTMLElement, host: HTMLElement, onInfo: (info: SurfaceInfo) => void) {
+  /**
+   * `scroller` scrolls; the page elements are added to `host`, which lies inside it.
+   * `onDrawFailed` hears of a page that could not be drawn and stays empty.
+   */
+  constructor(scroller: HTMLElement, host: HTMLElement, onInfo: (info: SurfaceInfo) => void, onDrawFailed: (error: unknown) => void = () => {}) {
     this.#scroller = scroller;
     this.#host = host;
     this.#onInfo = onInfo;
+    this.#onDrawFailed = onDrawFailed;
     this.#observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -539,7 +531,10 @@ export class PdfSurface {
       slot.task = null;
       const cancelled = error instanceof Error && error.name === 'RenderingCancelledException';
       // A page that cannot be drawn is marked as done, so the loop does not retry it forever.
-      if (!cancelled && this.#doc === doc) slot.renderedKey = key;
+      if (!cancelled && this.#doc === doc) {
+        slot.renderedKey = key;
+        this.#onDrawFailed(error);
+      }
     }
   }
 

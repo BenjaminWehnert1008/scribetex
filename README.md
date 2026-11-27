@@ -143,6 +143,12 @@ characters, so scribeTeX keeps questions under 12,000.
   contents does not lead anywhere.
 - The LaTeX packages are the ones built into the site. The list is the base
   tree plus `engine/extra-packages.txt`.
+- The PDF preview is drawn by pdf.js. Its modern build needs the newest
+  JavaScript features, which Safari has all of only since version 26.2. A
+  browser that lacks one gets pdf.js's legacy build, which brings its own
+  copies, and a tip to update or to use Chrome or Edge (`src/ui/pdf/pdfjs.ts`).
+  The legacy build still needs Safari 17.4 or newer. In older versions the
+  preview says that it cannot draw the PDF, which can still be downloaded.
 
 ## Working on it
 

@@ -1,6 +1,7 @@
 import { Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react';
 import { type MouseEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { reportError } from '@/app/services';
+import { PreviewTrouble } from './BrowserAdvice';
 import { downloadBytes } from '../common/ui';
 import { type PageTextRun, PdfSurface, type PagePoint, type PageRect, type SurfaceInfo, type SurfaceMark, type SurfaceSelection } from './pdf-surface';
 
@@ -43,12 +44,17 @@ export function PdfView(props: PdfViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<PdfSurface | null>(null);
   const [info, setInfo] = useState<SurfaceInfo>({ pages: 0, scale: 1, zoom: 'fit' });
+  /** A page of the current PDF could not be drawn, or the PDF could not be opened. */
+  const [trouble, setTrouble] = useState(false);
   const { pdf, version } = props;
 
   const { apiRef } = props;
   useEffect(() => {
     if (!scroller.current || !host.current) return;
-    const created = new PdfSurface(scroller.current, host.current, setInfo);
+    const created = new PdfSurface(scroller.current, host.current, setInfo, (error) => {
+      console.warn('A page of the PDF could not be drawn:', error);
+      setTrouble(true);
+    });
     surface.current = created;
     if (apiRef) {
       apiRef.current = {
@@ -100,11 +106,15 @@ export function PdfView(props: PdfViewProps) {
   useEffect(() => {
     const current = surface.current;
     if (!current) return;
+    setTrouble(false);
     if (!pdf) {
       current.clear();
       return;
     }
-    current.show(pdf).catch((error: unknown) => reportError(error, 'The PDF could not be displayed'));
+    current.show(pdf).catch((error: unknown) => {
+      setTrouble(true);
+      reportError(error, 'The PDF could not be displayed');
+    });
   }, [pdf, version]);
 
   const { reveal } = props;
@@ -191,6 +201,7 @@ export function PdfView(props: PdfViewProps) {
         }}
       >
         {!pdf && <div className="pdf-empty">{props.empty}</div>}
+        {pdf && trouble && <PreviewTrouble />}
         <div ref={host} />
       </div>
     </>

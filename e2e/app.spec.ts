@@ -674,3 +674,53 @@ test.describe('with the LaTeX engine', () => {
     });
   }
 });
+
+test.describe('in browsers of different ages', () => {
+  test('shows no update tip in an up-to-date browser', async ({ page }) => {
+    await start(page);
+    await createProject(page, 'Up to date', 'Blank');
+    await expect(page.locator('.cm-content')).toBeVisible();
+    await expect(page.getByText('a few updates behind')).toHaveCount(0);
+  });
+
+  test.describe('a few updates behind', () => {
+    // Safari before 26.2 lacks some of these features, and older versions lack
+    // all of them. Removing them shows what such a browser gets: the legacy
+    // build of pdf.js (src/ui/pdf/pdfjs.ts) and a tip to update.
+    const remove = [
+      'for (const C of [Map, WeakMap]) { delete C.prototype.getOrInsert; delete C.prototype.getOrInsertComputed; }',
+      'delete Math.sumPrecise; delete Promise.try; delete URL.parse; delete globalThis.Iterator;',
+      'for (const name of ["fromBase64", "fromHex"]) delete Uint8Array[name];',
+      'for (const name of ["toBase64", "toHex", "setFromBase64", "setFromHex"]) delete Uint8Array.prototype[name];',
+      'for (const name of ["union", "intersection", "difference", "symmetricDifference", "isSubsetOf", "isSupersetOf", "isDisjointFrom"]) delete Set.prototype[name];',
+    ].join('\n');
+    test.use({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15' });
+
+    test('draws the PDF all the same and suggests updating Safari', async ({ page }) => {
+      test.skip(!engineReady, 'run "npm run engine:prepare" and build first');
+      test.setTimeout(300_000);
+      await page.addInitScript(remove);
+      // The worker of pdf.js runs on its own, so it loses the features too.
+      await page.route(/pdf\.worker[^/]*\.mjs/, async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: `${remove}\n${await response.text()}` });
+      });
+      await start(page);
+      await createProject(page, 'Older Safari', 'CV');
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(page.locator('.pdf-trouble')).toHaveCount(0);
+
+      const tip = page.getByRole('status').filter({ hasText: 'this version of Safari is a few updates behind' });
+      await expect(tip).toContainText('update Safari or open scribeTeX in Chrome or Edge');
+      await expect(tip.getByRole('link', { name: 'Get Chrome' })).toHaveAttribute('href', 'https://www.google.com/chrome/');
+      await tip.getByRole('button', { name: 'Dismiss the tip' }).click();
+      await expect(tip).toBeHidden();
+
+      // Dismissed for good: not shown again after a reload.
+      await page.reload();
+      await expect(page.locator('.topbar .title')).toHaveText('Older Safari');
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(tip).toHaveCount(0);
+    });
+  });
+});
