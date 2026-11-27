@@ -488,6 +488,44 @@ test.describe('with the LaTeX engine', () => {
     expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('How');
   });
 
+  test('compiles again from the precompiled preamble with the same pages and jumps', async ({ page }) => {
+    await start(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await createProject(page, 'Again', 'Report');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await page.locator('.statusbar button').first().click();
+    await page.getByRole('tab', { name: 'Full log' }).click();
+    const log = page.locator('pre.log');
+    await expect(log).toContainText('preloaded format=pdflatex');
+
+    // While it waits after the second compile, the engine makes a format of
+    // the preamble and checks it. The compile after that loads it, and its
+    // log names that format (main, after main.tex) in the first line.
+    await row(page, 'main.tex').click();
+    await expect(async () => {
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('ControlOrMeta+Enter');
+      await expect(log).toContainText('preloaded format=main', { timeout: 15_000 });
+    }).toPass({ timeout: 180_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await expect(page.locator('.statusbar')).toContainText('No problems');
+    await expect(page.locator('.pdf-bar')).toContainText('6 pages');
+
+    // The SyncTeX data of that compile still leads from the source to the PDF and back.
+    await row(page, 'methods.tex').click();
+    await page.locator('.cm-line').nth(3).click();
+    await page.getByRole('button', { name: 'Show the cursor position in the PDF' }).click();
+    const mark = page.locator('.pdf-mark').first();
+    await expect(mark).toBeVisible();
+    const box = (await mark.boundingBox())!;
+    await row(page, 'main.tex').click();
+    await expect(page.locator('.tab[aria-selected=true]')).toContainText('main.tex');
+    await page.mouse.dblclick(box.x + 12, box.y + box.height / 2);
+    await expect(page.locator('.statusbar')).toContainText('Line 4, column 4');
+    await expect(page.locator('.cm-content')).toContainText('How the work was done.');
+  });
+
   test('shows an error with its file and line, and keeps the last good PDF', async ({ page }) => {
     await start(page);
     await createProject(page, 'Broken', 'Article');
