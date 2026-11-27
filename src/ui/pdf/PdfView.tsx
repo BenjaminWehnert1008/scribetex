@@ -1,8 +1,8 @@
 import { Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { reportError } from '@/app/services';
-import { downloadBytes } from '../common/ui';
 import { PreviewTrouble } from './BrowserAdvice';
+import { downloadBytes } from '../common/ui';
 import { PdfSurface, type PagePoint, type PageRect, type SurfaceInfo } from './pdf-surface';
 
 export interface PdfViewProps {
