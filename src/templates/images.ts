@@ -66,11 +66,12 @@ export function encodePng(width: number, height: number, pixel: (x: number, y: n
   return png;
 }
 
-const PAPER: Rgb = [238, 243, 241];
-const FRAME: Rgb = [23, 113, 91];
-const HILL_BACK: Rgb = [137, 190, 172];
-const HILL_FRONT: Rgb = [63, 154, 127];
-const SUN: Rgb = [242, 190, 84];
+// Shades of grey, so that the templates using this picture stay black and white.
+const PAPER: Rgb = [242, 242, 242];
+const FRAME: Rgb = [68, 68, 68];
+const HILL_BACK: Rgb = [176, 176, 176];
+const HILL_FRONT: Rgb = [120, 120, 120];
+const SUN: Rgb = [196, 196, 196];
 
 /** A framed landscape (sun and two hills), the usual "picture goes here" sign. */
 export function exampleFigure(): Uint8Array {

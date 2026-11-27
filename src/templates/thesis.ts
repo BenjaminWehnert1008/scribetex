@@ -93,10 +93,12 @@ const preamble = String.raw`% Packages and page layout for the thesis.
 \renewcommand{\headrulewidth}{0.4pt}
 \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
 
-% Colours and links (load hyperref last)
+% Colours and links (load hyperref last). The accent is black, so links are
+% clickable but print like the text. To colour them, replace the \colorlet
+% line with a colour of your own, such as \definecolor{accent}{HTML}{17715B}
 \usepackage{xcolor}
-\definecolor{accent}{HTML}{17715B}
-\usepackage[colorlinks=true,linkcolor=accent,citecolor=accent,urlcolor=accent]{hyperref}
+\colorlet{accent}{black}
+\usepackage[colorlinks=true,allcolors=accent]{hyperref}
 `;
 
 const macros = String.raw`% Your own commands. Define a command once and use it everywhere.
