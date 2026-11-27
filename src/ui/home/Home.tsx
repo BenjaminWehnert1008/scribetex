@@ -22,7 +22,7 @@ import type { ProjectId, ProjectMeta } from '@/core/types';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
-import { ThemeSwitch } from '../common/ThemeSwitch';
+import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { NewProjectDialog } from './NewProjectDialog';
 import { PixelLogo } from './PixelLogo';
 
@@ -277,6 +277,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
             Open-source licences
           </a>
           <ThemeSwitch withLabel />
+          <AccentSwitch withLabel />
         </div>
         <p className="home-by">
           Developed by {AUTHOR_NAME} ·{' '}

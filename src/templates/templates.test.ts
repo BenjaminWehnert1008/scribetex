@@ -1,6 +1,21 @@
+import { unzlibSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { tryNormalizePath } from '../core/paths';
 import { TEMPLATES, templateFileBytes } from './index';
+
+/** Whether a picture made by encodePng (8-bit RGB, no filters, one IDAT chunk right after IHDR) has only shades of grey. */
+function isGrey(png: Uint8Array): boolean {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  const width = view.getUint32(16);
+  // 8 bytes of signature and 25 of IHDR, then the IDAT chunk: length, type, data.
+  if (String.fromCharCode(...png.subarray(37, 41)) !== 'IDAT') throw new Error('not a picture from encodePng');
+  const raw = unzlibSync(png.subarray(41, 41 + view.getUint32(33)));
+  const stride = width * 3 + 1;
+  for (let row = 0; row < raw.length; row += stride) {
+    for (let i = row + 1; i < row + stride; i += 3) if (raw[i] !== raw[i + 1] || raw[i] !== raw[i + 2]) return false;
+  }
+  return true;
+}
 
 describe('templates', () => {
   it('offers Blank first, then Thesis, Project Proposal and CV', () => {
@@ -45,6 +60,21 @@ describe('templates', () => {
           }
         }
       });
+
+      // Only the CV has colour accents; the other templates print in black and grey.
+      if (template.id !== 'cv') {
+        it('is black and white', () => {
+          for (const file of template.files) {
+            if ('text' in file && file.path.endsWith('.tex')) {
+              const text = file.text.replace(/(^|[^\\])%.*$/gm, '$1');
+              expect(text, file.path).not.toMatch(/\\definecolor|\\usecolortheme|(link|cite|url)color=/);
+              for (const match of text.matchAll(/\\colorlet\{\w+\}\{([^}]+)\}/g)) expect(match[1], file.path).toMatch(/^(black|gr[ae]y)(!\d+)?$/);
+              for (const match of text.matchAll(/\\setbeamercolor\{[^}]+\}\{([^}]+)\}/g)) expect(match[1], file.path).toMatch(/^fg=black$/);
+            }
+            if (file.path.endsWith('.png')) expect(isGrey(templateFileBytes(file)), file.path).toBe(true);
+          }
+        });
+      }
 
       it('makes real PNG pictures', () => {
         for (const file of template.files) {
