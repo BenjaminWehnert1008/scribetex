@@ -239,7 +239,8 @@ export class PdfSurface {
     const scroller = this.#scroller;
     const pageTop = slot.el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
     const middle = pageTop + ((top + bottom) / 2) * scale;
-    scroller.scrollTo({ top: Math.max(0, middle - scroller.clientHeight / 2), behavior: 'smooth' });
+    const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({ top: Math.max(0, middle - scroller.clientHeight / 2), behavior: smooth ? 'smooth' : 'auto' });
 
     for (const old of this.#host.querySelectorAll('.pdf-mark')) old.remove();
     for (const rect of rects) {

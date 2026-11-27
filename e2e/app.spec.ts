@@ -284,6 +284,7 @@ test.describe('with the LaTeX engine', () => {
 
   test('jumps between a line in a subfolder file and its place in the PDF', async ({ page }) => {
     await start(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await createProject(page, 'Sync', 'Report');
     await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
     await expect(page.locator('.statusbar')).toContainText('Compiled in');
@@ -294,14 +295,8 @@ test.describe('with the LaTeX engine', () => {
     await page.getByRole('button', { name: 'Show the cursor position in the PDF' }).click();
     const mark = page.locator('.pdf-mark').first();
     await expect(mark).toBeVisible();
-    // The preview scrolls there smoothly; measure once it has stopped.
-    let box = (await mark.boundingBox())!;
-    await expect(async () => {
-      const now = (await mark.boundingBox())!;
-      const moved = Math.abs(now.y - box.y);
-      box = now;
-      expect(moved).toBeLessThan(0.5);
-    }).toPass({ intervals: [150], timeout: 1_500 });
+    // Without animations the preview jumps there at once, so the mark is where it stays.
+    const box = (await mark.boundingBox())!;
 
     // From the PDF back to the source, from another file: a double-click on
     // the first word of the marked line opens that file there, word selected.
