@@ -175,6 +175,7 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .about p { color: var(--ink-soft); max-width: 70ch; margin-bottom: 10px; }
 .about-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .about-actions .btn { text-decoration: none; color: var(--ink); }
+.about-actions .btn.primary { color: var(--on-accent); }
 
 /* Workspace frame */
 .ws { height: 100%; display: grid; grid-template-rows: auto var(--bar-height) 1fr var(--status-height); }

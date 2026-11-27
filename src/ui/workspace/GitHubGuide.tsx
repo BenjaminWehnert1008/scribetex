@@ -48,7 +48,7 @@ function Step(props: { number: number; title: string; link?: { href: string; lab
  * The four steps. The last one depends on where the guide is shown: next to
  * the form in a project, or on the home screen where no project is open yet.
  */
-export function GitHubGuideSteps(props: { lastStep: 'form' | 'open-project' }) {
+export function GitHubGuideSteps(props: { lastStep: 'form' | 'open-project' | 'this-project' }) {
   return (
     <ol className="guide" aria-label="Steps on GitHub">
       <Step number={1} title="Create a free GitHub account" link={{ href: SIGN_UP_URL, label: 'Sign up on GitHub' }}>
@@ -93,6 +93,14 @@ export function GitHubGuideSteps(props: { lastStep: 'form' | 'open-project' }) {
           </p>
         </Step>
       )}
+      {props.lastStep === 'this-project' && (
+        <Step number={4} title={`Connect it in ${APP_NAME}`}>
+          <p>
+            In <b>Saving and backup</b> on the left, click <b>Set up…</b> under "A private GitHub repository". Paste the repository name and the
+            token, and click <b>Connect and back up</b>. For other projects the token is remembered.
+          </p>
+        </Step>
+      )}
       {props.lastStep === 'open-project' && (
         <Step number={4} title={`Connect it in ${APP_NAME}`}>
           <p>
@@ -105,14 +113,15 @@ export function GitHubGuideSteps(props: { lastStep: 'form' | 'open-project' }) {
   );
 }
 
-export function GitHubGuideDialog(props: { onClose: () => void }) {
+/** `where` says whether a project is open behind the guide, which changes the last step. */
+export function GitHubGuideDialog(props: { onClose: () => void; where?: 'home' | 'project' }) {
   return (
     <Dialog title="Set up a GitHub backup, step by step" wide onClose={props.onClose}>
       <p className="muted" style={{ marginBottom: 12 }}>
         About five minutes, no previous knowledge needed. Once a project is connected, {APP_NAME} backs it up by itself after changes, so it is safe
         even if this browser's data is cleared or the computer is lost.
       </p>
-      <GitHubGuideSteps lastStep="open-project" />
+      <GitHubGuideSteps lastStep={props.where === 'project' ? 'this-project' : 'open-project'} />
       <div className="actions">
         <button className="btn primary" onClick={props.onClose}>
           Got it
