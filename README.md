@@ -109,6 +109,11 @@ characters, so scribeTeX keeps questions under 12,000.
 - The first compile downloads the engine, tens of megabytes. After that the
   browser has it cached. A document that uses T1 encoding without a font
   package (such as `lmodern`) loads another 60 MB of fonts once.
+- The first compile of a document takes a few seconds. From the third one on,
+  the engine loads the preamble (everything before `\begin{document}`) from a
+  copy it made in between and checked against a normal compile, so a change
+  in the body compiles in about half a second. After a change in the preamble
+  the next two compiles take the normal time again.
 - Jumping from the PDF lands on the line TeX was reading. For text set by
   a macro after the fact (a whole `align` block, a heading made by a class),
   that is the line where the environment or command ended. The table of
