@@ -22,6 +22,7 @@ import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } fr
 import { RestoreDialog } from './RestoreDialog';
 import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { NewProjectDialog } from './NewProjectDialog';
+import { GitHubGuideDialog } from '../workspace/GitHubGuide';
 import { PixelLogo } from './PixelLogo';
 
 export function Home(props: { services: Services; onOpen: (id: ProjectId) => void }) {
@@ -33,6 +34,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [menu, setMenu] = useState<{ x: number; y: number; project: ProjectMeta } | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [guide, setGuide] = useState(false);
   const [opening, setOpening] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
   const now = useTick(30_000);
@@ -105,8 +107,8 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
         <p className="home-lead">{APP_TAGLINE}</p>
 
         {!browser.folderAccess && (
-          <div className="notice-card warn" role="note">
-            <StorageNoticeText browser={browser} />
+          <div className="notice-card" role="note">
+            <StorageNoticeText browser={browser} onGuide={() => setGuide(true)} />
           </div>
         )}
 
@@ -257,8 +259,14 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
             markNoticeSeen();
             setNotice(false);
           }}
+          onGuide={() => {
+            markNoticeSeen();
+            setNotice(false);
+            setGuide(true);
+          }}
         />
       )}
+      {guide && <GitHubGuideDialog onClose={() => setGuide(false)} />}
       {menu && (
         <Menu
           x={menu.x}
