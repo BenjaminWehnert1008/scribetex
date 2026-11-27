@@ -15,13 +15,16 @@ import type { Journal } from '@/core/session/journal';
 import { acquireProjectLock, type ProjectLock } from '@/core/session/lock';
 import { ProjectSession } from '@/core/session/session';
 import { Emitter, Store } from '@/core/store';
-import type { FileEntry, Path, ProjectId, ProjectMeta, VaultChange } from '@/core/types';
+import type { ReviewStorage } from '@/core/review/storage';
+import { applyChanges, type TextChange } from '@/core/review/text-diff';
+import type { FileEntry, Path, ProjectId, ProjectMeta, ReviewCopyMeta, VaultChange } from '@/core/types';
 import type { Vault } from '@/core/vault/vault';
 
 import { GitHubBackup } from './github-backup';
+import { ReviewSession } from './review-session';
 
 export type TabKind = 'text' | 'image' | 'pdf' | 'binary';
-export type SidePanel = 'files' | 'outline' | 'history' | 'storage';
+export type SidePanel = 'files' | 'outline' | 'review' | 'history' | 'storage';
 
 export interface Tab {
   path: Path;
@@ -33,8 +36,10 @@ export interface WorkspaceState {
   entries: FileEntry[];
   tabs: Tab[];
   active: Path | null;
-  /** True when another tab holds this project. Editing is off. */
+  /** True when another tab holds this project, or when it is a review copy. Editing is off. */
   readOnly: boolean;
+  /** Set when this is someone else's project, opened to comment on it. */
+  reviewCopy: ReviewCopyMeta | null;
   panel: SidePanel;
   bottomOpen: boolean;
   bottomTab: 'problems' | 'log';
@@ -47,6 +52,16 @@ export interface Reveal {
   line: number;
   /** A word on that line to put the cursor on, when known. */
   word?: string;
+  /** An exact range to select instead, in positions of the file's text. */
+  range?: { from: number; to: number };
+  /** Leave the focus where it is (the reveal answers a click elsewhere). */
+  keepFocus?: boolean;
+}
+
+/** Lets the model change text that the editor holds, so the change goes into its undo history. */
+export interface EditorBridge {
+  /** Applies the change when the editor holds the file; returns false when it does not. */
+  apply(path: Path, change: TextChange): boolean;
 }
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp']);
@@ -68,6 +83,7 @@ export interface WorkspaceDeps {
   snapshots: SnapshotStore;
   engine: EngineClient;
   journal: Journal;
+  reviews: ReviewStorage;
 }
 
 export class WorkspaceModel {
@@ -79,6 +95,8 @@ export class WorkspaceModel {
   /** The optional backup to a GitHub repository. */
   readonly github: GitHubBackup;
   readonly reveal = new Emitter<Reveal>();
+  /** Comments and suggestions. Set while the project opens. */
+  review!: ReviewSession;
   /** Paths recovered from the crash journal when the project was opened. */
   readonly recovered: Path[];
   readonly projectId: ProjectId;
@@ -91,6 +109,7 @@ export class WorkspaceModel {
   #sentPdfVersion = 0;
   #changedSinceSnapshot = false;
   #disposed = false;
+  #editor: EditorBridge | null = null;
 
   private constructor(
     deps: WorkspaceDeps,
@@ -115,8 +134,10 @@ export class WorkspaceModel {
       entries,
       tabs: [],
       active: null,
-      readOnly: !lock.held,
-      panel: 'files',
+      readOnly: !lock.held || Boolean(project.reviewCopy),
+      reviewCopy: project.reviewCopy ?? null,
+      // Someone who opens a review copy has come to comment.
+      panel: project.reviewCopy ? 'review' : 'files',
       bottomOpen: false,
       bottomTab: 'problems',
       buffersVersion: 0,
@@ -141,16 +162,45 @@ export class WorkspaceModel {
       },
     });
     const github = await GitHubBackup.open(deps.vault, projectId);
-    const model = new WorkspaceModel(deps, await deps.vault.requireProject(projectId), entries, lock, recovered, session, folder, github);
+    const project = await deps.vault.requireProject(projectId);
+    const model = new WorkspaceModel(deps, project, entries, lock, recovered, session, folder, github);
+    model.review = await ReviewSession.open(
+      {
+        projectId,
+        vault: deps.vault,
+        storage: deps.reviews,
+        readText: (path) => model.readText(path),
+        applyEdit: (path, change) => model.applyEdit(path, change),
+        canWrite: () => model.#lock.held && !model.#disposed,
+      },
+      project.reviewCopy ? 'reviewer' : 'author',
+    );
+    model.#disposers.push(model.session.saved.on(({ paths }) => void model.review.verify(paths)));
 
-    if (lock.held) {
+    if (lock.held && !project.reviewCopy) {
       void deps.snapshots.create(projectId, { reason: 'auto', skipIfUnchanged: true }).catch(() => undefined);
     }
     const first = model.#initialFile();
     if (first) await model.openFile(first);
-    void model.compile.request();
+    if (project.reviewCopy) {
+      // A review copy shows the PDF its author sent; nothing is compiled here.
+      const assets = await deps.reviews.getCopy(projectId);
+      model.compile.showOutput({
+        pdf: assets?.pdf ?? null,
+        synctex: assets?.synctex ?? null,
+        mainFile: assets?.mainFile ?? project.mainFile,
+        knownPaths: assets?.knownPaths ?? entries.map((entry) => entry.path),
+        workDir: assets?.workDir ?? '',
+      });
+    } else {
+      void model.compile.request();
+    }
     void model.syncFolder();
     return model;
+  }
+
+  get isReviewCopy(): boolean {
+    return this.state.get().reviewCopy !== null;
   }
 
   // ---- reading -------------------------------------------------------------
@@ -221,9 +271,28 @@ export class WorkspaceModel {
 
   // ---- editing -------------------------------------------------------------
 
-  edit(path: Path, text: string): void {
+  /** An edit typed in the editor. `changes` are the exact changes, in positions of the text before them. */
+  edit(path: Path, text: string, changes?: readonly TextChange[]): void {
     if (this.state.get().readOnly) return;
     this.session.edit(path, text);
+    if (changes) this.review.trackEdit(path, changes, text);
+  }
+
+  setEditorBridge(bridge: EditorBridge | null): void {
+    this.#editor = bridge;
+  }
+
+  /** Changes a file in place: through the editor when it holds the file, so the change can be undone there. */
+  async applyEdit(path: Path, change: TextChange): Promise<void> {
+    this.#assertEditable();
+    if (this.#editor?.apply(path, change)) return;
+    const before = await this.readText(path);
+    if (change.to > before.length) throw new Error('The file changed; the suggestion no longer fits it.');
+    const after = applyChanges(before, [change]);
+    if (!this.session.isOpen(path)) await this.session.open(path);
+    this.session.edit(path, after);
+    this.review.trackEdit(path, [change], after);
+    await this.session.flush();
   }
 
   // ---- file tree actions ---------------------------------------------------
@@ -327,8 +396,35 @@ export class WorkspaceModel {
   // ---- compile, export, history ---------------------------------------------
 
   async compileNow(): Promise<void> {
+    if (this.isReviewCopy) return;
     await this.session.flush().catch(() => undefined);
     await this.compile.request();
+  }
+
+  /**
+   * A review copy of this project for someone to comment on: compiles first,
+   * so the PDF in it matches the text in it.
+   */
+  async reviewCopy(siteUrl: string): Promise<{ name: string; bytes: Uint8Array; compiled: boolean }> {
+    await this.compileNow();
+    const { pdf, synctex, mainFile, ok } = this.compile.state.get();
+    const context = this.compile.syncContext();
+    const file = await this.review.reviewCopy({
+      projectName: this.state.get().project.name,
+      pdf,
+      synctex,
+      mainFile,
+      knownPaths: context?.knownPaths ?? this.state.get().entries.map((entry) => entry.path),
+      workDir: context?.workDir ?? '',
+      siteUrl,
+    });
+    return { ...file, compiled: ok === true };
+  }
+
+  /** The comments made in this review copy, to send back. */
+  async commentsFile(siteUrl: string): Promise<{ name: string; bytes: Uint8Array }> {
+    const copy = this.state.get().reviewCopy;
+    return this.review.commentsFile(copy?.project ?? this.state.get().project.name, siteUrl);
   }
 
   async exportZip(): Promise<{ name: string; bytes: Uint8Array }> {
@@ -382,7 +478,9 @@ export class WorkspaceModel {
     this.#lock = await acquireProjectLock(this.projectId, { steal: true });
     this.#watchLock();
     await this.#reloadBuffers();
-    this.state.patch({ readOnly: !this.#lock.held });
+    // The other tab kept the comments up to date; start from what it stored.
+    await this.review.restart();
+    this.state.patch({ readOnly: !this.#lock.held || this.isReviewCopy });
     void this.syncFolder();
   }
 
@@ -394,6 +492,7 @@ export class WorkspaceModel {
     for (const dispose of this.#disposers) dispose();
     this.compile.dispose();
     await this.session.dispose();
+    await this.review?.dispose();
     // One last pass, so the folder has what was typed before the project closed.
     if (this.folder.linked && this.#lock.held) await this.folder.request().catch(() => undefined);
     await this.folder.dispose();
@@ -461,7 +560,7 @@ export class WorkspaceModel {
   #onVaultChange(change: VaultChange): void {
     if (change.projectId !== this.projectId || this.#disposed) return;
     if (change.type === 'project') {
-      if (change.project) this.state.patch({ project: change.project });
+      if (change.project) this.state.patch({ project: change.project, reviewCopy: change.project.reviewCopy ?? null });
       return;
     }
     const outside = change.origin === 'folder' || change.origin === 'restore' || change.origin === 'import';
@@ -519,7 +618,7 @@ export class WorkspaceModel {
   }
 
   #scheduleCompile(): void {
-    if (!this.state.get().project.autoCompile || this.#disposed) return;
+    if (!this.state.get().project.autoCompile || this.#disposed || this.isReviewCopy) return;
     if (this.#compileTimer) clearTimeout(this.#compileTimer);
     this.#compileTimer = setTimeout(() => {
       this.#compileTimer = null;

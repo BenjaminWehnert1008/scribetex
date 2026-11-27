@@ -4,6 +4,7 @@
 import { SnapshotStore } from '@/core/backup/snapshots';
 import { SiglumEngine } from '@/core/engine/siglum';
 import type { EngineClient } from '@/core/engine/types';
+import { ReviewStorage } from '@/core/review/storage';
 import { browserJournalStorage, Journal } from '@/core/session/journal';
 import { Store } from '@/core/store';
 import { Vault } from '@/core/vault/vault';
@@ -13,6 +14,8 @@ export interface Services {
   snapshots: SnapshotStore;
   engine: EngineClient;
   journal: Journal;
+  /** Comments and suggestions of every project. */
+  reviews: ReviewStorage;
 }
 
 export interface Toast {
@@ -48,10 +51,15 @@ export function getServices(): Promise<Services> {
     const snapshots = new SnapshotStore(vault);
     const engine = new SiglumEngine({ baseUrl: new URL('./engine', document.baseURI).href });
     const journal = new Journal(browserJournalStorage());
+    const reviews = await ReviewStorage.open();
+    // A deleted project takes its comments with it.
+    vault.changes.on((change) => {
+      if (change.type === 'project' && change.project === null) void reviews.deleteProject(change.projectId).catch(() => undefined);
+    });
     // Ask the browser not to clear our storage under disk pressure. Chrome
     // decides this without a prompt; the Storage panel shows the outcome.
     void navigator.storage?.persist?.().catch(() => false);
-    return { vault, snapshots, engine, journal };
+    return { vault, snapshots, engine, journal, reviews };
   })();
   return services;
 }

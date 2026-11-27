@@ -37,6 +37,42 @@ async function typeInEditor(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text);
 }
 
+/** Selects `words` with the mouse, in the text under `root` (the source editor or the PDF's text). */
+async function selectWords(page: Page, root: string, words: string): Promise<void> {
+  const box = await page.evaluate(
+    ({ root, words }) => {
+      const nodes: Text[] = [];
+      for (const element of document.querySelectorAll(root)) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
+      }
+      const places: [Text, number][] = [];
+      let joined = '';
+      for (const node of nodes) {
+        for (let index = 0; index < node.data.length; index++) places.push([node, index]);
+        joined += node.data;
+      }
+      const at = joined.indexOf(words);
+      if (at < 0) return null;
+      const rectOf = ([node, index]: [Text, number]): DOMRect => {
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        return range.getBoundingClientRect();
+      };
+      const first = rectOf(places[at]!);
+      const last = rectOf(places[at + words.length - 1]!);
+      return { x1: first.left + 0.5, y1: first.top + first.height / 2, x2: last.right - 0.5, y2: last.top + last.height / 2 };
+    },
+    { root, words },
+  );
+  if (!box) throw new Error(`"${words}" was not found in ${root}`);
+  await page.mouse.move(box.x1, box.y1);
+  await page.mouse.down();
+  await page.mouse.move(box.x2, box.y2, { steps: 6 });
+  await page.mouse.up();
+}
+
 const tree = (page: Page) => page.getByRole('tree', { name: 'Project files' });
 const row = (page: Page, name: string) => tree(page).getByRole('treeitem', { name, exact: true });
 const panel = (page: Page, name: string) => page.getByRole('navigation', { name: 'Side panels' }).getByRole('button', { name, exact: true });
@@ -140,6 +176,42 @@ test('opens a project read-only in a second tab until it is taken over', async (
   await second.getByRole('button', { name: 'Edit here instead' }).click();
   await expect(second.getByText('open for editing in another tab')).toBeHidden();
   await expect(page.getByText('open for editing in another tab')).toBeVisible();
+});
+
+test('keeps a comment on its words while the text around them changes', async ({ page }) => {
+  await start(page);
+  await createProject(page, 'Commented', 'Blank');
+  await row(page, 'main.tex').click();
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText('The results were clearly better than expected.');
+  await panel(page, 'Review').click();
+
+  await selectWords(page, '.cm-content', 'clearly better');
+  await page.getByRole('toolbar', { name: 'Comment on the selection' }).getByRole('button', { name: 'Comment' }).click();
+  const name = page.getByRole('dialog', { name: 'Your name' });
+  await name.getByLabel('Name').fill('Anna Schmidt');
+  await name.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('dialog', { name: 'New comment' }).getByLabel('Comment').fill('By how much?');
+  await page.keyboard.press('Enter');
+  const card = page.locator('.rv-card', { hasText: 'By how much?' });
+  await expect(card).toContainText('Anna Schmidt');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+
+  // Text typed before the comment does not move it off its words, also after a reload.
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+Home');
+  await page.keyboard.type('In short: ');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+  await expect(page.locator('.save-chip')).toHaveText('Saved in this browser only');
+  await page.reload();
+  await panel(page, 'Review').click();
+  await expect(page.locator('.cm-content')).toContainText('In short: The results');
+  await expect(page.locator('.cm-rv-comment')).toHaveText('clearly better');
+  await card.getByRole('button', { name: 'Resolve' }).click();
+  await expect(page.locator('.cm-rv-comment')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Done/ }).click();
+  await expect(card).toContainText('Resolved');
 });
 
 test('links a project to a folder and keeps both in step', async ({ playwright, baseURL }, testInfo) => {
@@ -424,6 +496,74 @@ test.describe('with the LaTeX engine', () => {
       await expect(page.locator('.pdf-bar')).toContainText(`${pages} page`);
     });
   }
+
+  test('sends a review copy, takes the comments back and accepts a suggestion', async ({ page, browser, baseURL }, testInfo) => {
+    await start(page);
+    await createProject(page, 'For review', 'Article');
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+    await expect(page.locator('.statusbar')).toContainText('Compiled in');
+    await panel(page, 'Review').click();
+    await page.getByRole('button', { name: 'Send for review' }).click();
+    const name = page.getByRole('dialog', { name: 'Your name' });
+    await name.getByLabel('Name').fill('Benni');
+    await name.getByRole('button', { name: 'Continue' }).click();
+    const send = page.getByRole('dialog', { name: 'Send for review' });
+    const sent = page.waitForEvent('download');
+    await send.getByRole('button', { name: 'Download review copy' }).click();
+    const copy = testInfo.outputPath('copy.scribetex');
+    await (await sent).saveAs(copy);
+    await send.getByRole('button', { name: 'Close' }).click();
+
+    // The supervisor, in a browser of their own, comments on the PDF without any LaTeX.
+    const other = await browser.newContext({ baseURL });
+    const reviewer = await other.newPage();
+    await start(reviewer);
+    await reviewer.locator('input[type=file][accept=".scribetex"]').setInputFiles(copy);
+    await expect(reviewer.locator('.topbar .title')).toHaveText('For review (review)');
+    await expect(reviewer.getByText('Review copy of')).toBeVisible();
+    await expect(reviewer.locator('.pdf-page .textLayer span').first()).toBeAttached();
+    const bar = reviewer.getByRole('toolbar', { name: 'Comment on the selection' });
+    await selectWords(reviewer, '.pdf-page .textLayer', 'Start writing here');
+    await bar.getByRole('button', { name: 'Comment' }).click();
+    const reviewerName = reviewer.getByRole('dialog', { name: 'Your name' });
+    await reviewerName.getByLabel('Name').fill('Prof. Weber');
+    await reviewerName.getByRole('button', { name: 'Continue' }).click();
+    await reviewer.getByRole('dialog', { name: 'New comment' }).getByLabel('Comment').fill('Please add a motivation first.');
+    await reviewer.keyboard.press('Enter');
+    await expect(reviewer.locator('.cm-rv-comment')).toHaveText('Start writing here');
+
+    await selectWords(reviewer, '.pdf-page .textLayer', 'short summary');
+    await bar.getByRole('button', { name: 'Suggest a change' }).click();
+    const suggest = reviewer.getByRole('dialog', { name: 'Suggest a change' });
+    await expect(suggest.getByLabel('Suggested text')).toHaveValue('short summary');
+    await suggest.getByLabel('Suggested text').fill('brief summary');
+    await reviewer.keyboard.press('Enter');
+    await expect(reviewer.locator('.cm-rv-del')).toHaveText('short');
+    await expect(reviewer.locator('.cm-rv-ins')).toHaveText('brief');
+    await expect(reviewer.locator('.pdf-rv-pin')).toHaveCount(2);
+
+    await reviewer.getByRole('button', { name: 'Send comments back' }).first().click();
+    const back = reviewer.getByRole('dialog', { name: 'Send your comments back' });
+    const returned = reviewer.waitForEvent('download');
+    await back.getByRole('button', { name: 'Download comments' }).click();
+    const comments = testInfo.outputPath('comments.scribetex');
+    await (await returned).saveAs(comments);
+    await other.close();
+
+    // The author takes them in: each shows where it was made, and the suggestion can be accepted.
+    await page.locator('input[type=file][accept=".scribetex"]').setInputFiles(comments);
+    await expect(page.getByText('2 new comments and suggestions from Prof. Weber added.')).toBeVisible();
+    await expect(page.locator('.rv-card')).toHaveCount(2);
+    await expect(page.locator('.cm-rv-comment')).toHaveText('Start writing here');
+    await expect(page.locator('.pdf-rv-pin')).toHaveCount(2);
+    await page.locator('.rv-card', { hasText: 'brief' }).getByRole('button', { name: 'Accept' }).click();
+    await expect(page.locator('.cm-content')).toContainText('A brief summary of the article.');
+    await expect(page.locator('.rv-card')).toHaveCount(1);
+
+    // The same file again adds nothing.
+    await page.locator('input[type=file][accept=".scribetex"]').setInputFiles(comments);
+    await expect(page.getByText('Nothing new: everything in this file was already here.')).toBeVisible();
+  });
 
   // The community templates need packages that only the full engine build has
   // (engine/extra-packages.txt); without them, a template is skipped here.
