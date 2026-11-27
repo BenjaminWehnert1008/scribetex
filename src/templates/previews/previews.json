@@ -1,0 +1,30 @@
+{
+  "blank": {
+    "fingerprint": "7fa753d08e934ac03ba8db5c535d625ef780e01d81b1f1934ca6b5d1ff95212a",
+    "picture": false
+  },
+  "thesis": {
+    "fingerprint": "c0b2e603420f78c45cd6356c047ca4f20deaccb87616198d7224514a0cd3df2f",
+    "picture": true
+  },
+  "proposal": {
+    "fingerprint": "3993e015608b87bcec12e0e7d12c5d8ec9edd6b786563039b4c212271276eee3",
+    "picture": true
+  },
+  "cv": {
+    "fingerprint": "ffe1795c7cf1febe356e223f134cae9da2c75252209e166ae27c492d8db48350",
+    "picture": true
+  },
+  "article": {
+    "fingerprint": "512cd39c684be55e8b91a877250227daf381a998620263fe26ba1d17b43d4f97",
+    "picture": true
+  },
+  "report": {
+    "fingerprint": "0d2b6da363599c44942310ccf64073ccf14085ea5408b4360287395d5b7f3bcf",
+    "picture": true
+  },
+  "slides": {
+    "fingerprint": "4b434cd2981d9be2eaa851e0ce8e205b1ed9a1d5d95c23e5b1b693519dc85eb5",
+    "picture": true
+  }
+}
