@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Dialog } from './ui';
+import { Dialog, Menu } from './ui';
 
 // The dialog only shares a file with the toasts; the app's services are not needed here.
 vi.mock('@/app/services', async () => {
@@ -77,5 +77,39 @@ describe('Dialog', () => {
     render(<Dialog title="Connect">{form}</Dialog>);
     render(null);
     expect(document.activeElement).toBe(opener);
+  });
+});
+
+describe('Menu', () => {
+  const items = [
+    { label: 'One', run: () => undefined },
+    { label: 'Two', run: () => undefined },
+  ];
+  const menu = (): HTMLElement => host.querySelector<HTMLElement>('.menu')!;
+
+  beforeEach(() => {
+    // happy-dom does no layout, so the window and the menu get a size here.
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1000);
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 200, bottom: 150, width: 200, height: 150, toJSON: () => ({}),
+    });
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('opens below its button when it fits', () => {
+    render(<Menu x={100} y={300} above={270} items={items} onClose={() => undefined} />);
+    expect([menu().style.left, menu().style.top]).toEqual(['100px', '300px']);
+  });
+
+  it('opens above its button when it does not fit below, so that a second click cannot choose an item', () => {
+    render(<Menu x={100} y={700} above={670} items={items} onClose={() => undefined} />);
+    expect(menu().style.top).toBe(`${670 - 4 - 150}px`);
+  });
+
+  it('stays inside the window when it has nothing to open above', () => {
+    render(<Menu x={900} y={700} items={items} onClose={() => undefined} />);
+    expect([menu().style.left, menu().style.top]).toEqual([`${1000 - 200 - 4}px`, `${800 - 150 - 4}px`]);
   });
 });

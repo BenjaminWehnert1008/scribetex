@@ -30,7 +30,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState(() => !noticeSeen());
-  const [menu, setMenu] = useState<{ x: number; y: number; project: ProjectMeta } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number; project: ProjectMeta } | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -176,7 +176,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
                 aria-label={`Actions for ${project.name}`}
                 onClick={(event) => {
                   const box = event.currentTarget.getBoundingClientRect();
-                  setMenu({ x: box.right - 190, y: box.bottom + 4, project });
+                  setMenu({ x: box.right - 190, y: box.bottom + 4, above: box.top, project });
                 }}
               >
                 <Ellipsis size={16} />
@@ -263,6 +263,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
         <Menu
           x={menu.x}
           y={menu.y}
+          above={menu.above}
           onClose={() => setMenu(null)}
           items={[
             { label: 'Open', run: () => props.onOpen(menu.project.id) },
