@@ -1,5 +1,5 @@
 {
-  "_about": "Pixel data for the scribeTeX logo. One character per pixel; \".\" is transparent. Used by scripts/make-logo.mjs (SVG and PNG files) and src/ui/home/PixelLogo.tsx (the typing animation).",
+  "_about": "Pixel data for the scribeTeX logo. One character per pixel; \".\" is transparent. Used by scripts/make-logo.mjs (SVG and PNG files) and in the app by src/ui/home/PixelLogo.tsx (the home logo with its typing animation and the top-bar mark) and src/ui/workspace/PaperPile.tsx. In the app the colours come from the --logo-* tokens in src/styles/tokens.css, which follow the mode and the colour scheme; their green values must match colours and dark here.",
   "colours": {
     "K": "#23211c",
     "P": "#ffffff",

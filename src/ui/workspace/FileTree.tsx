@@ -106,7 +106,7 @@ export function FileTree(props: { model: WorkspaceModel; state: WorkspaceState; 
     return stored;
   });
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number; items: MenuItem[] } | null>(null);
   const [dropTarget, setDropTarget] = useState<Path | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<FileEntry | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
@@ -316,7 +316,7 @@ export function FileTree(props: { model: WorkspaceModel; state: WorkspaceState; 
         onDrop={(event) => onDrop(event, null)}
         onContextMenu={(event) => {
           event.preventDefault();
-          setMenu({ x: event.clientX, y: event.clientY, items: menuItems(null) });
+          setMenu({ x: event.clientX, y: event.clientY, above: event.clientY, items: menuItems(null) });
         }}
       >
         <ul className="tree" role="tree" aria-label="Project files">
@@ -363,7 +363,7 @@ export function FileTree(props: { model: WorkspaceModel; state: WorkspaceState; 
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    setMenu({ x: event.clientX, y: event.clientY, items: menuItems(entry.path) });
+                    setMenu({ x: event.clientX, y: event.clientY, above: event.clientY, items: menuItems(entry.path) });
                   }}
                 >
                   <span className="twist">{entry.kind === 'dir' ? open ? <ChevronDown size={13} /> : <ChevronRight size={13} /> : null}</span>
@@ -381,7 +381,7 @@ export function FileTree(props: { model: WorkspaceModel; state: WorkspaceState; 
                     onClick={(event) => {
                       event.stopPropagation();
                       const box = event.currentTarget.getBoundingClientRect();
-                      setMenu({ x: box.left, y: box.bottom + 2, items: menuItems(entry.path) });
+                      setMenu({ x: box.left, y: box.bottom + 2, above: box.top, items: menuItems(entry.path) });
                     }}
                   >
                     <Ellipsis size={14} />
@@ -414,7 +414,7 @@ export function FileTree(props: { model: WorkspaceModel; state: WorkspaceState; 
           );
         }}
       />
-      {menu && <Menu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {menu && <Menu x={menu.x} y={menu.y} above={menu.above} items={menu.items} onClose={() => setMenu(null)} />}
       {confirmDelete && (
         <Dialog title={confirmDelete.kind === 'dir' ? 'Delete this folder?' : 'Delete this file?'} onClose={() => setConfirmDelete(null)}>
           <p>

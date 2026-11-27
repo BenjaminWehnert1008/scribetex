@@ -146,8 +146,9 @@ test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await page.getByRole('menuitemradio', { name: 'Rose' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
   expect(await accent()).not.toBe(green);
-  const body = page.locator('.topbar-mark path').first();
-  await expect(body).toBeVisible();
+  // The typewriter's body takes the scheme's colour; its outline stays as it is.
+  const body = page.locator('.topbar-mark path[style*="--logo-G"]');
+  await expect(body).toHaveCSS('fill', 'rgb(168, 50, 79)');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
   await page.getByRole('button', { name: 'Colour scheme: Rose' }).click();
@@ -155,6 +156,37 @@ test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await page.getByRole('menuitemradio', { name: 'Green' }).click();
   await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
   expect(await accent()).toBe(green);
+  await expect(body).toHaveCSS('fill', 'rgb(23, 113, 91)');
+});
+
+test('opens the colour scheme menu above its button at the end of the home page', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await start(page);
+  await page.locator('.home').evaluate((home) => home.scrollTo(0, home.scrollHeight));
+  const button = page.getByRole('button', { name: 'Colour scheme: Green' });
+  await button.click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  // There is no room below, so the menu opens above instead of over the button ...
+  const [buttonBox, menuBox] = [(await button.boundingBox())!, (await menu.boundingBox())!];
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(buttonBox.y);
+  await expect(menu.getByRole('menuitemradio', { name: 'Blue' })).toHaveCSS('font-size', '14px');
+  // ... and a second click on the button does not choose a scheme.
+  await button.click();
+  await expect(page.locator('html')).not.toHaveAttribute('data-accent', /.*/);
+});
+
+test('types on a typewriter while the first PDF is being prepared', async ({ page }) => {
+  // The engine's files never arrive, so the first compile stays at loading the engine.
+  await page.route((url) => url.pathname.startsWith('/engine/'), () => undefined);
+  await start(page);
+  await createProject(page, 'Waiting', 'Blank');
+  await expect(page.getByText('Preparing the first PDF')).toBeVisible();
+  await expect(page.getByText(/The first compile loads the LaTeX engine/)).toBeVisible();
+  const typewriter = page.locator('.paper-pile');
+  await expect(typewriter).toBeVisible();
+  const before = await typewriter.innerHTML();
+  await expect.poll(() => typewriter.innerHTML()).not.toBe(before);
 });
 
 test('keeps nested folders and text across a reload', async ({ page }) => {

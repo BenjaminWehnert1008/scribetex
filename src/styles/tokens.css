@@ -53,6 +53,9 @@
   --warn-d: #e6b450;
   --warn-soft-l: #fbefd3;
   --warn-soft-d: #3d3016;
+  /* "All fine" (saved, linked): green in every scheme, so it never looks like --danger or --warn. */
+  --ok-l: #17715b;
+  --ok-d: #4cc2a0;
   --info-l: #2c5f9e;
   --info-d: #8ab4f0;
   --pdf-backdrop-l: #e7e2d6;
@@ -71,6 +74,14 @@
   --syn-bracket-d: #b5b0a2;
   --syn-string-l: #2c5f9e;
   --syn-string-d: #8ab4f0;
+  /*
+   * The logo and the typewriters (src/ui/common/pixel-art.tsx), one token per
+   * pixel colour. For green, the -l values must be the "colours" and the -d
+   * values the "dark" colours of src/app/logo-pixels.json, which
+   * scripts/make-logo.mjs draws the favicon and logo files from
+   * (src/styles/tokens.test.ts checks this). L (typed lines), W (keys) and
+   * E (folds in the paper pile) do not change with the mode.
+   */
   --logo-K-l: #23211c;
   --logo-K-d: #6b665a;
   --logo-R-l: #3a372f;
@@ -85,6 +96,9 @@
   --logo-H-d: #3f9a7f;
   --logo-D-l: #0f4f40;
   --logo-D-d: #0f4f40;
+  --logo-L: #8a8475;
+  --logo-W: #fbf9f4;
+  --logo-E: #d8d2c4;
 
   /* Light mode unless a dark block below applies. */
   --paper: var(--paper-l);
@@ -104,6 +118,7 @@
   --danger-soft: var(--danger-soft-l);
   --warn: var(--warn-l);
   --warn-soft: var(--warn-soft-l);
+  --ok: var(--ok-l);
   --info: var(--info-l);
   --pdf-backdrop: var(--pdf-backdrop-l);
   --shadow: var(--shadow-l);
@@ -142,6 +157,7 @@
     --danger-soft: var(--danger-soft-d);
     --warn: var(--warn-d);
     --warn-soft: var(--warn-soft-d);
+    --ok: var(--ok-d);
     --info: var(--info-d);
     --pdf-backdrop: var(--pdf-backdrop-d);
     --shadow: var(--shadow-d);
@@ -180,6 +196,7 @@
   --danger-soft: var(--danger-soft-d);
   --warn: var(--warn-d);
   --warn-soft: var(--warn-soft-d);
+  --ok: var(--ok-d);
   --info: var(--info-d);
   --pdf-backdrop: var(--pdf-backdrop-d);
   --shadow: var(--shadow-d);
@@ -211,6 +228,8 @@
   --on-accent-d: #0d1626;
   --syn-command-l: #2457a6;
   --syn-command-d: #7aa7ee;
+  --syn-string-l: #17715b;
+  --syn-string-d: #4cc2a0;
   --logo-A-l: #2457a6;
   --logo-A-d: #7aa7ee;
   --logo-G-l: #2457a6;
@@ -341,4 +360,9 @@
   --logo-H-d: #5e5e5e;
   --logo-D-l: #262626;
   --logo-D-d: #262626;
+  --logo-L: #858585;
+  --logo-W: #fafafa;
+  --logo-E: #d4d4d4;
+  --ok-l: #1a1a1a;
+  --ok-d: #ededed;
 }

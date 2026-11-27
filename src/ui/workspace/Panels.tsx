@@ -62,7 +62,7 @@ export function HistoryPanel(props: { model: WorkspaceModel; services: Services;
   const [list, setList] = useState<SnapshotMeta[] | null>(null);
   const [naming, setNaming] = useState<{ id: string | null; label: string } | null>(null);
   const [restoring, setRestoring] = useState<SnapshotMeta | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; snapshot: SnapshotMeta } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number; snapshot: SnapshotMeta } | null>(null);
   const now = useTick(30_000);
 
   const refresh = useCallback(() => {
@@ -126,7 +126,7 @@ export function HistoryPanel(props: { model: WorkspaceModel; services: Services;
                 aria-label="More actions for this version"
                 onClick={(event) => {
                   const box = event.currentTarget.getBoundingClientRect();
-                  setMenu({ x: box.left, y: box.bottom + 2, snapshot });
+                  setMenu({ x: box.left, y: box.bottom + 2, above: box.top, snapshot });
                 }}
               >
                 <Ellipsis size={14} />
@@ -140,6 +140,7 @@ export function HistoryPanel(props: { model: WorkspaceModel; services: Services;
         <Menu
           x={menu.x}
           y={menu.y}
+          above={menu.above}
           onClose={() => setMenu(null)}
           items={[
             { label: 'Restore this version', disabled: readOnly, run: () => setRestoring(menu.snapshot) },

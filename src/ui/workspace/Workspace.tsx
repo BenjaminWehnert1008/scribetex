@@ -47,6 +47,7 @@ import { APP_NAME } from '@/app/brand';
 import { AskClaude } from './AskClaude';
 import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { PixelMark } from '../home/PixelLogo';
+import { PaperPile } from './PaperPile';
 
 interface Layout {
   side: number;
@@ -330,7 +331,7 @@ export function Workspace(props: WorkspaceProps) {
   const [cursor, setCursor] = useState<{ line: number; column: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [asking, setAsking] = useState<{ problem: Diagnostic | null } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number } | null>(null);
   const [recoveredNote, setRecoveredNote] = useState(model.recovered.length > 0);
   const [index, setIndex] = useState<ProjectIndex | null>(null);
   const indexRef = useRef<ProjectIndex | null>(null);
@@ -496,13 +497,16 @@ export function Workspace(props: WorkspaceProps) {
         </div>
       );
     }
+    // While the first PDF is being made, a typewriter types on and on to pass the time.
+    const preparing = running || engine.phase === 'loading';
     return (
       <div>
+        {preparing && <PaperPile />}
         <p>
-          <b>{running || engine.phase === 'loading' ? 'Preparing the first PDF' : 'The PDF appears here'}</b>
+          <b>{preparing ? 'Preparing the first PDF' : 'The PDF appears here'}</b>
         </p>
         <p style={{ marginTop: 6, maxWidth: '44ch' }}>
-          {running || engine.phase === 'loading'
+          {preparing
             ? 'The first compile loads the LaTeX engine, about 50 MB. It is then kept in this browser, so later starts are quick and work offline.'
             : 'Press Compile to typeset the document.'}
         </p>
@@ -618,7 +622,8 @@ export function Workspace(props: WorkspaceProps) {
             <Play size={14} /> Compile
           </button>
         )}
-        <AccentSwitch />
+        {/* Where the bar is narrow, the scheme is chosen on the home page, so that More still fits. */}
+        <AccentSwitch className="hide-narrow" />
         <ThemeSwitch />
         <button
           className="icon-btn"
@@ -626,7 +631,7 @@ export function Workspace(props: WorkspaceProps) {
           title="More"
           onClick={(event) => {
             const box = event.currentTarget.getBoundingClientRect();
-            setMenu({ x: box.right - 200, y: box.bottom + 4 });
+            setMenu({ x: box.right - 200, y: box.bottom + 4, above: box.top });
           }}
         >
           <Ellipsis size={17} />
@@ -825,6 +830,7 @@ export function Workspace(props: WorkspaceProps) {
         <Menu
           x={menu.x}
           y={menu.y}
+          above={menu.above}
           onClose={() => setMenu(null)}
           items={[
             ...(reviewCopy ? [] : [{ label: 'Send for review', run: () => review.withName(() => setSendingReview(true)) }]),
