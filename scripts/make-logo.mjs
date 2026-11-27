@@ -1,11 +1,11 @@
 /**
- * Draws the scribeTex logo, a pixel-art typewriter with pixel lettering, and
+ * Draws the scribeTeX logo, a pixel-art typewriter with pixel lettering, and
  * writes it as three SVG files in public/:
  *   favicon.svg    the typewriter on a 16 x 16 grid, for the browser tab
  *   favicon-32.png and apple-touch-icon.png, the same as PNG for browsers
  *                  that skip SVG icons (Safari) and for phone home screens
  *   logo-mark.svg  the typewriter on a 24 x 24 grid, for the top bar
- *   logo.svg       the typewriter and the word "scribeTex" (README, home page)
+ *   logo.svg       the typewriter and the word "scribeTeX" (README, home page)
  * The favicon, logo-mark.svg and logo.svg follow the system's dark mode on
  * their own. The app also has a light/dark switch, which an <img> cannot see,
  * so logo-mark and logo also come as fixed -light and -dark files.
@@ -53,8 +53,8 @@ function svg(width, height, paths, title, mode = 'auto') {
 
 /** Writes name.svg (follows the system) plus name-light.svg and name-dark.svg. */
 function writeAll(name, width, height, paths) {
-  write(`${name}.svg`, svg(width, height, paths, 'scribeTex'));
-  for (const mode of ['light', 'dark']) write(`${name}-${mode}.svg`, svg(width, height, paths, 'scribeTex', mode));
+  write(`${name}.svg`, svg(width, height, paths, 'scribeTeX'));
+  for (const mode of ['light', 'dark']) write(`${name}-${mode}.svg`, svg(width, height, paths, 'scribeTeX', mode));
 }
 
 function write(name, text) {
@@ -103,7 +103,7 @@ function writeBinary(name, bytes) {
 
 let paths = {};
 paint(FAVICON, 0, 0, paths);
-write('favicon.svg', svg(16, 16, paths, 'scribeTex'));
+write('favicon.svg', svg(16, 16, paths, 'scribeTeX'));
 writeBinary('favicon-32.png', png(FAVICON, 2));
 // 24 grid + 3 pixels margin = 30, at 6 = 180 px, on paper (iOS adds no transparency).
 writeBinary('apple-touch-icon.png', png(MARK, 6, '#fbf9f4', 3));
@@ -113,7 +113,7 @@ paint(MARK, 0, 0, paths);
 writeAll('logo-mark', 24, 24, paths);
 
 let x = DATA.text.left;
-[...'scribeTex'].forEach((letter, index) => {
+[...'scribeTeX'].forEach((letter, index) => {
   const ink = index < 6 ? 'I' : 'A';
   const glyph = GLYPHS[letter].map((row) => row.replaceAll('#', ink));
   paint(glyph, x, DATA.text.top, paths);

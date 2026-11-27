@@ -374,4 +374,19 @@ test.describe('with the LaTeX engine', () => {
     await expect(page.locator('.statusbar')).toContainText('No problems', { timeout: 240_000 });
     await expect(page.locator('.pdf-bar')).toContainText('1 page');
   });
+
+  for (const [template, pages] of [
+    ['Thesis', 16],
+    ['Project Proposal', 3],
+    ['CV', 1],
+  ] as const) {
+    test(`compiles the ${template} template without errors`, async ({ page }) => {
+      await start(page);
+      await createProject(page, template, template);
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(page.locator('.statusbar')).toContainText('Compiled in');
+      await expect(page.locator('.statusbar')).toContainText('No problems');
+      await expect(page.locator('.pdf-bar')).toContainText(`${pages} page`);
+    });
+  }
 });

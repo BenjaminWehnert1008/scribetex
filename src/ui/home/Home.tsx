@@ -16,9 +16,8 @@ import { safeFileName } from '@/app/workspace-model';
 import { exportProjectZip, importZipAsProject } from '@/core/backup/zip';
 import type { DirHandle } from '@/core/fsa/disk';
 import { FolderSync } from '@/core/fsa/sync';
-import { encodeText } from '@/core/hash';
 import type { ProjectId, ProjectMeta } from '@/core/types';
-import { TEMPLATES } from '@/templates';
+import { TEMPLATES, templateFileBytes } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
@@ -37,7 +36,7 @@ function NewProjectDialog(props: { services: Services; onClose: () => void; onCr
     for (const dir of template.dirs ?? []) await vault.mkdir(project.id, dir, { origin: 'import' });
     await vault.writeMany(
       project.id,
-      template.files.map((file) => ({ path: file.path, bytes: encodeText(file.text) })),
+      template.files.map((file) => ({ path: file.path, bytes: templateFileBytes(file) })),
       { origin: 'import' },
     );
     props.onCreated(project.id);

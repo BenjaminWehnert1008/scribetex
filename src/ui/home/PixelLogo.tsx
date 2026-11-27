@@ -3,13 +3,13 @@ import PIXELS from '@/app/logo-pixels.json';
 
 /**
  * The home page logo, drawn from the same pixel data as public/logo.svg, with
- * a typing animation: "scribeTex" is typed, then the second word is erased and
- * retyped as Thesis, Proposal and CV, and it ends back on "Tex" without the
+ * a typing animation: "scribeTeX" is typed, then the second word is erased and
+ * retyped as Thesis, Proposal and CV, and it ends back on "TeX" without the
  * cursor. It plays once per page load, waits while `paused` (the first-visit
  * notice) or while the tab is hidden, and does not play with reduced motion.
  */
 const FIRST = 'scribe';
-const FINAL = 'Tex';
+const FINAL = 'TeX';
 const WORDS = ['Thesis', 'Proposal', 'CV', FINAL];
 const { left: LEFT, top: TOP, gap: GAP, height: TEXT_HEIGHT } = PIXELS.text;
 const GLYPHS: Record<string, string[]> = PIXELS.glyphs;
