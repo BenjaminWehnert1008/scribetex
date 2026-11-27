@@ -147,7 +147,7 @@
       "id": "metropolis",
       "name": "Metropolis Slides",
       "category": "Slides",
-      "description": "The popular flat, modern beamer theme, with its demo talk",
+      "description": "The popular flat, modern beamer theme with its demo talk, set in the standard font because its Fira font needs XeLaTeX",
       "author": "Matthias Vogelgesang",
       "repo": "matze/mtheme",
       "commit": "2fa6084b9d34fec9d2d5470eb9a17d0bf712b6c8",
