@@ -81,6 +81,24 @@ test('suggests Chrome or Edge and guides through the GitHub setup where folders 
   await expect(guide).toBeVisible();
 });
 
+test('shows a picture of every built-in template when a project is started', async ({ page }) => {
+  await start(page);
+  await page.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
+  const cards = dialog.locator('button.template');
+  await expect(cards.first()).toBeVisible();
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(4);
+  // Blank shows an empty page; every other template a picture of its first page.
+  await expect(cards.filter({ hasText: 'Blank' }).locator('.empty-page')).toBeVisible();
+  const pictures = dialog.locator('button.template .template-preview > img');
+  await expect(pictures).toHaveCount(count - 1);
+  await expect.poll(() => pictures.evaluateAll((images) => images.filter((image) => (image as HTMLImageElement).naturalWidth > 0).length)).toBe(count - 1);
+  await expect(dialog.locator('.template-detail')).toHaveText('An empty document and an images folder.');
+  await cards.filter({ hasText: 'Thesis' }).click();
+  await expect(dialog.locator('.template-detail')).toHaveText('Chapters, front matter, appendix, images and a bibliography.');
+});
+
 test('remembers the colour scheme and recolours the logo', async ({ page }) => {
   await start(page);
   const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
@@ -461,6 +479,9 @@ test.describe('with the LaTeX engine', () => {
     ['Thesis', 16],
     ['Project Proposal', 3],
     ['CV', 1],
+    ['Article', 1],
+    ['Report', 6],
+    ['Slides', 2],
   ] as const) {
     test(`compiles the ${template} template without errors`, async ({ page }) => {
       await start(page);
