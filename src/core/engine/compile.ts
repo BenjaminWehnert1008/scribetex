@@ -8,6 +8,7 @@
 import { decodeText } from '../hash';
 import { detectMainFile, isBuildArtifact } from '../latex/deps';
 import { parseLog } from '../latex/log';
+import { parseSyncTex, type SyncTexMap } from '../latex/synctex';
 import { dirname, extname } from '../paths';
 import { Store } from '../store';
 import type { Diagnostic, Millis, Path, ProjectId } from '../types';
@@ -29,6 +30,7 @@ export interface CompileState {
   warningCount: number;
   pages: number | null;
   log: string;
+  /** SyncTeX data of the PDF in `pdf`, so it always matches the pages shown. */
   synctex: string | null;
   mainFile: Path | null;
   durationMs: number | null;
@@ -86,6 +88,9 @@ export class CompileController {
   #again = false;
   #running: Promise<void> | null = null;
   #disposed = false;
+  /** How to read file names in `state.synctex`: the project as it was when that PDF was made. */
+  #syncContext: { knownPaths: Path[]; workDir: Path } | null = null;
+  #syncCache: { text: string; map: SyncTexMap } | null = null;
 
   constructor(vault: Vault, engine: EngineClient, projectId: ProjectId, options: { now?: () => Millis } = {}) {
     this.#vault = vault;
@@ -116,6 +121,14 @@ export class CompileController {
   dispose(): void {
     this.#disposed = true;
     this.stop();
+  }
+
+  /** The SyncTeX data of the PDF on screen, read on first use. Null when the engine wrote none. */
+  syncMap(): SyncTexMap | null {
+    const text = this.state.get().synctex;
+    if (!text || !this.#syncContext) return null;
+    if (this.#syncCache?.text !== text) this.#syncCache = { text, map: parseSyncTex(text, this.#syncContext) };
+    return this.#syncCache.map;
   }
 
   async #loop(): Promise<void> {
@@ -167,6 +180,7 @@ export class CompileController {
     if (!output.ok && summary.errorCount === 0) diagnostics.unshift(engineProblem(output.error ?? 'The compile failed.'));
 
     const previous = this.state.get();
+    if (output.pdf) this.#syncContext = { knownPaths, workDir: dirname(request.mainFile) };
     this.state.set({
       phase: 'idle',
       pdf: output.pdf ?? previous.pdf,
@@ -178,7 +192,7 @@ export class CompileController {
       warningCount: diagnostics.filter((item) => item.severity === 'warning').length,
       pages: summary.pages,
       log: output.log,
-      synctex: output.synctex ?? previous.synctex,
+      synctex: output.pdf ? output.synctex : previous.synctex,
       mainFile: request.mainFile,
       durationMs: output.durationMs,
       finishedAt: this.#now(),

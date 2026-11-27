@@ -23,6 +23,10 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
   the right line of the right file.
 - pdfLaTeX with BibTeX and makeindex, compiled in the browser, with a PDF
   preview next to the source. Compiling on every change can be switched on.
+- Source and PDF linked both ways (SyncTeX): double-click a word in the PDF,
+  or Ctrl+click (Cmd+click on a Mac), and the editor opens that file at that
+  line with the word selected, also for files in subfolders. The target
+  button above the PDF marks where the line under the cursor ended up.
 - Saving that is built so that work is not lost. See the next section.
 - **Ask Claude**, from the top bar or next to any problem. See below.
 
@@ -102,6 +106,10 @@ characters, so scribeTeX keeps questions under 12,000.
 - The first compile downloads the engine, tens of megabytes. After that the
   browser has it cached. A document that uses T1 encoding without a font
   package (such as `lmodern`) loads another 60 MB of fonts once.
+- Jumping from the PDF lands on the line TeX was reading. For text set by
+  a macro after the fact (a whole `align` block, a heading made by a class),
+  that is the line where the environment or command ended. The table of
+  contents does not lead anywhere.
 - The LaTeX packages are the ones built into the site. The list is the base
   tree plus `engine/extra-packages.txt`.
 

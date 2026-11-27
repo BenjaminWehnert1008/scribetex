@@ -14,6 +14,7 @@ import { explain } from '@/core/latex/log';
 import { dirname } from '@/core/paths';
 import type { Diagnostic, Path } from '@/core/types';
 import { latexCompletions } from './completion';
+import { findWordNear } from './find-word';
 
 const highlight = HighlightStyle.define([
   { tag: tags.tagName, color: 'var(--syn-command)' },
@@ -209,9 +210,12 @@ export function CodeEditor(props: CodeEditorProps) {
     viewRef.current = view;
     const cache = states.current;
     const jump = (reveal: Reveal): void => {
-      const lineNumber = Math.max(1, Math.min(reveal.line, view.state.doc.lines));
-      const line = view.state.doc.line(lineNumber);
-      view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: 'center' }) });
+      const doc = view.state.doc;
+      const lineNumber = Math.max(1, Math.min(reveal.line, doc.lines));
+      const found = reveal.word ? findWordNear((number) => (number >= 1 && number <= doc.lines ? doc.line(number).text : null), lineNumber, reveal.word) : null;
+      const line = doc.line(found?.line ?? lineNumber);
+      const selection = found ? { anchor: line.from + found.at, head: line.from + found.at + reveal.word!.length } : { anchor: line.from };
+      view.dispatch({ selection, effects: EditorView.scrollIntoView(selection.anchor, { y: 'center' }) });
       view.focus();
     };
     // Every file's state is built from the same extension list.
@@ -273,3 +277,4 @@ export function CodeEditor(props: CodeEditorProps) {
 
   return <div className="editor-host" ref={hostRef} />;
 }
+

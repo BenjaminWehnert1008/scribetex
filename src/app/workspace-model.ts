@@ -45,6 +45,8 @@ export interface WorkspaceState {
 export interface Reveal {
   path: Path;
   line: number;
+  /** A word on that line to put the cursor on, when known. */
+  word?: string;
 }
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp']);
@@ -182,7 +184,7 @@ export class WorkspaceModel {
 
   // ---- tabs ----------------------------------------------------------------
 
-  async openFile(path: Path, line?: number): Promise<void> {
+  async openFile(path: Path, line?: number, word?: string): Promise<void> {
     const entry = this.entry(path) ?? (await this.#deps.vault.stat(this.projectId, path));
     if (!entry || entry.kind !== 'file') return;
     const kind = tabKindOf(entry);
@@ -192,7 +194,7 @@ export class WorkspaceModel {
       tabs: state.tabs.some((tab) => tab.path === path) ? state.tabs : [...state.tabs, { path, kind }],
       active: path,
     }));
-    if (line !== undefined) queueMicrotask(() => this.reveal.emit({ path, line }));
+    if (line !== undefined) queueMicrotask(() => this.reveal.emit(word ? { path, line, word } : { path, line }));
   }
 
   async closeTab(path: Path): Promise<void> {

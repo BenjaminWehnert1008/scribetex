@@ -23,6 +23,7 @@ import { NO_MAIN_FILE } from '@/core/engine/compile';
 import type { EngineStatus } from '@/core/engine/types';
 import { outputPdfPath } from '@/core/latex/deps';
 import { explain } from '@/core/latex/log';
+import { forwardSearch, inverseSearch } from '@/core/latex/synctex';
 import { basename, extname } from '@/core/paths';
 import type { GitHubState } from '@/app/github-backup';
 import type { FolderState } from '@/core/fsa/sync';
@@ -32,6 +33,7 @@ import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '..
 import { CodeEditor } from '../editor/CodeEditor';
 import { useStore } from '../hooks/useStore';
 import { PdfView } from '../pdf/PdfView';
+import type { PagePoint, PageRect } from '../pdf/pdf-surface';
 import { FileTree } from './FileTree';
 import { FolderCard } from './FolderCard';
 import { GitHubCard } from './GitHubCard';
@@ -362,6 +364,38 @@ export function Workspace(props: WorkspaceProps) {
     };
   }, [services, model, state.entries, mainFile, save.lastSavedAt]);
 
+  // SyncTeX: from a spot in the PDF to its source, and from the cursor to the PDF.
+  const [pdfReveal, setPdfReveal] = useState<{ page: number; rects: PageRect[] } | null>(null);
+  const hasSync = compile.synctex !== null && compile.pdf !== null;
+  const findSource = useCallback(
+    (point: PagePoint, word: string | null): void => {
+      const map = model.compile.syncMap();
+      const spot = map ? inverseSearch(map, point.page, point.x, point.y) : null;
+      if (!spot) {
+        notify('No source line belongs to this spot of the PDF.', { ms: 3500 });
+        return;
+      }
+      setPane('editor');
+      void model.openFile(spot.file, spot.line, word ?? undefined);
+    },
+    [model],
+  );
+  const showCursor = useCallback((): void => {
+    const map = model.compile.syncMap();
+    const file = activeTab?.kind === 'text' ? activeTab.path : null;
+    if (!map || !file) {
+      notify('Open a .tex file and put the cursor on a line to find it in the PDF.', { ms: 3500 });
+      return;
+    }
+    const spot = forwardSearch(map, file, cursor?.line ?? 1);
+    if (!spot) {
+      notify(`Nothing from ${basename(file)} appears in the PDF yet. Compile once it is included.`, { ms: 4000 });
+      return;
+    }
+    setPane('pdf');
+    setPdfReveal({ page: spot.page, rects: spot.rects });
+  }, [model, activeTab, cursor]);
+
   const getIndex = useCallback(() => indexRef.current, []);
   const onCursor = useCallback((line: number, column: number) => setCursor({ line, column }), []);
 
@@ -680,7 +714,17 @@ export function Workspace(props: WorkspaceProps) {
             onDone={persistLayout}
           />
           <section className="right" style={{ width: layout.right }} aria-label="Preview">
-            <PdfView pdf={compile.pdf} version={compile.pdfVersion} stale={compile.ok === false} running={running} fileName={pdfName} empty={pdfEmpty()} />
+            <PdfView
+              pdf={compile.pdf}
+              version={compile.pdfVersion}
+              stale={compile.ok === false}
+              running={running}
+              fileName={pdfName}
+              empty={pdfEmpty()}
+              onFindSource={hasSync ? findSource : undefined}
+              onShowCursor={hasSync ? showCursor : undefined}
+              reveal={pdfReveal}
+            />
           </section>
         </div>
       </div>
