@@ -21,6 +21,7 @@
     "engine:prepare": "node scripts/engine-prepare.mjs",
     "notices": "node scripts/gen-notices.mjs",
     "logo": "node scripts/make-logo.mjs",
+    "templates": "node scripts/community-templates.mjs",
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {

@@ -278,6 +278,21 @@ function prepareWorker() {
     // --- end of addition ---`,
   );
 
+  // A font's metrics and its outlines can sit in different packages. The font
+  // map sends Palatino small capitals (metrics pplrc8r, from palatino) to the
+  // outline file fplrc8a.pfb, which is in fpl. pdfTeX opens the outlines only
+  // when it writes the PDF and then stops with "cannot open Type 1 font file
+  // for reading". No pattern knew that message, so fpl was never fetched. The
+  // name without ".pfb" finds its package in the file index.
+  patch(
+    'fetch the package of a missing Type 1 font file',
+    `        /! Font ([a-z0-9-]+) at [0-9]+ not found/g,`,
+    `        /! Font ([a-z0-9-]+) at [0-9]+ not found/g,
+        // --- added by scripts/engine-prepare.mjs ---
+        /!pdfTeX error:.*\\(file ([a-z0-9_-]+)\\.pfb\\): cannot open Type 1 font file/g,
+        // --- end of addition ---`,
+  );
+
   patch(
     'carry index files from one pass to the next',
     `    const auxExtensions = ['.aux', '.toc', '.lof', '.lot', '.out', '.nav', '.snm', '.bbl', '.blg', '-blx.bib'];`,

@@ -18,6 +18,9 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
   each with lorem ipsum text and a folder layout (chapters or sections,
   `images/`, `bibliography/`, settings), plus Article, Report and Slides. They
   live in `src/templates/`; pictures in them are drawn in code.
+- Templates from the community: resumes, papers, notes and slides by other
+  authors under open licenses, each tested with the compiler here and shown
+  with its author, license and source. See `community-templates/README.md`.
 - An editor with LaTeX highlighting, completion of commands, environments,
   labels, citation keys and file names, an outline, and problems that jump to
   the right line of the right file.
@@ -140,6 +143,9 @@ npm run e2e     # browser tests against a production build
 The browser tests that compile a document are skipped when the engine has not
 been prepared.
 
+The community templates are refreshed with `npm run templates` (see
+`community-templates/README.md`).
+
 ### Layout of the code
 
 | Folder | Content |
@@ -177,7 +183,9 @@ pull requests are welcome too.
 The editor's own code is under the MIT licence, see `LICENSE`. The engine and
 the LaTeX packages are other people's free software, published unchanged next
 to the editor under their own licences. `docs/COMPLIANCE.md` has the details,
-and the site itself serves them under `licenses/` and `engine/SOURCE.md`.
+and the site itself serves them under `licenses/` and `engine/SOURCE.md`. The
+community templates in `public/templates/` are other authors' work too, each
+with its licence in `TEMPLATE-LICENSE.txt`.
 
 This project was written from scratch. It contains no code from other LaTeX
 editors.

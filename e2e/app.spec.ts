@@ -22,6 +22,15 @@ async function createProject(page: Page, name: string, template: string): Promis
   await expect(page.locator('.topbar .title')).toHaveText(name);
 }
 
+async function createFromCommunity(page: Page, name: string, template: string): Promise<void> {
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByLabel('Name').fill(name);
+  await page.getByRole('button', { name: 'From the community' }).click();
+  await page.locator('button.template', { hasText: template }).click();
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.locator('.topbar .title')).toHaveText(name);
+}
+
 async function typeInEditor(page: Page, text: string): Promise<void> {
   await page.locator('.cm-content').click();
   await page.keyboard.press('ControlOrMeta+End');
@@ -413,6 +422,28 @@ test.describe('with the LaTeX engine', () => {
       await expect(page.locator('.statusbar')).toContainText('Compiled in');
       await expect(page.locator('.statusbar')).toContainText('No problems');
       await expect(page.locator('.pdf-bar')).toContainText(`${pages} page`);
+    });
+  }
+
+  // The community templates need packages that only the full engine build has
+  // (engine/extra-packages.txt); without them, a template is skipped here.
+  const community = JSON.parse(fs.readFileSync(path.join(root, 'public/templates/index.json'), 'utf8')) as {
+    templates: { name: string; packages: string[] }[];
+  };
+  const packagesFile = path.join(root, 'dist/engine/packages/index.json');
+  const installed = new Set(
+    fs.existsSync(packagesFile) ? (JSON.parse(fs.readFileSync(packagesFile, 'utf8')) as { name: string }[]).map((entry) => entry.name) : [],
+  );
+  for (const template of community.templates) {
+    const missing = template.packages.filter((name) => !installed.has(name));
+    test(`compiles the community template ${template.name}`, async ({ page }) => {
+      test.skip(missing.length > 0, `needs ${missing.join(', ')}`);
+      await start(page);
+      await createFromCommunity(page, template.name, template.name);
+      await expect(row(page, 'TEMPLATE-LICENSE.txt')).toBeVisible();
+      await expect(page.locator('.pdf-page canvas').first()).toBeVisible({ timeout: 240_000 });
+      await expect(page.locator('.statusbar')).toContainText('Compiled in');
+      await expect(page.locator('.statusbar')).not.toContainText(/\b[1-9]\d* errors?\b/);
     });
   }
 });

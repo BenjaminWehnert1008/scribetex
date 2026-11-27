@@ -132,3 +132,13 @@ lato
 fira
 ebgaramond
 dejavu
+
+# Needed by the community templates (community-templates/sources.json lists
+# which template needs which)
+keycommand
+pdfrender
+doi
+pythonhighlight
+newpx
+appendixnumberbeamer
+catchfile

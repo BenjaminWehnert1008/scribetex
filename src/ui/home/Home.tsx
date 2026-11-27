@@ -17,74 +17,12 @@ import { exportProjectZip, importZipAsProject } from '@/core/backup/zip';
 import type { DirHandle } from '@/core/fsa/disk';
 import { FolderSync } from '@/core/fsa/sync';
 import type { ProjectId, ProjectMeta } from '@/core/types';
-import { TEMPLATES, templateFileBytes } from '@/templates';
 import { Dialog, downloadBytes, formatAgo, formatBytes, Menu, useTick } from '../common/ui';
 import { markNoticeSeen, noticeSeen, StorageNoticeDialog, StorageNoticeText } from './notices';
 import { RestoreDialog } from './RestoreDialog';
 import { ThemeSwitch } from '../common/ThemeSwitch';
+import { NewProjectDialog } from './NewProjectDialog';
 import { PixelLogo } from './PixelLogo';
-
-function NewProjectDialog(props: { services: Services; onClose: () => void; onCreated: (id: ProjectId) => void }) {
-  const [name, setName] = useState('');
-  const [templateId, setTemplateId] = useState(TEMPLATES[0]!.id);
-  const [busy, setBusy] = useState(false);
-
-  const create = async (): Promise<void> => {
-    const template = TEMPLATES.find((candidate) => candidate.id === templateId) ?? TEMPLATES[0]!;
-    const { vault } = props.services;
-    const project = await vault.createProject({ name: name.trim() || 'Untitled project', mainFile: template.mainFile });
-    for (const dir of template.dirs ?? []) await vault.mkdir(project.id, dir, { origin: 'import' });
-    await vault.writeMany(
-      project.id,
-      template.files.map((file) => ({ path: file.path, bytes: templateFileBytes(file) })),
-      { origin: 'import' },
-    );
-    props.onCreated(project.id);
-  };
-
-  return (
-    <Dialog title="New project" onClose={busy ? undefined : props.onClose}>
-      <form
-        style={{ display: 'grid', gap: 14 }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (busy) return;
-          setBusy(true);
-          create().catch((error: unknown) => {
-            setBusy(false);
-            reportError(error, 'The project could not be created');
-          });
-        }}
-      >
-        <label className="stack">
-          Name
-          <input className="field" value={name} maxLength={120} placeholder="For example: Thesis" autoFocus onChange={(event) => setName(event.target.value)} />
-        </label>
-        <div>
-          <span className="muted" style={{ fontSize: 13 }}>
-            Start from
-          </span>
-          <div className="template-grid">
-            {TEMPLATES.map((template) => (
-              <button type="button" key={template.id} className="template" aria-pressed={template.id === templateId} onClick={() => setTemplateId(template.id)}>
-                <b>{template.name}</b>
-                <span>{template.description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="actions" style={{ marginTop: 0 }}>
-          <button type="button" className="btn" disabled={busy} onClick={props.onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn primary" disabled={busy}>
-            Create project
-          </button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
 
 export function Home(props: { services: Services; onOpen: (id: ProjectId) => void }) {
   const { services } = props;
