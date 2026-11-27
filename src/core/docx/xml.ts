@@ -53,6 +53,9 @@ const CANONICAL_PREFIXES: Record<string, string> = {
   'urn:schemas-microsoft-com:office:office': 'o',
   'http://schemas.microsoft.com/office/word/2010/wordprocessingShape': 'wps',
   'http://purl.org/dc/elements/1.1/': 'dc',
+  // Package parts are read by their unprefixed names ("Relationship"), whatever prefix a writer chose.
+  'http://schemas.openxmlformats.org/package/2006/relationships': '',
+  'http://schemas.openxmlformats.org/package/2006/content-types': '',
 };
 
 /** Renames "ns0:p" to "w:p" when ns0 is the WordprocessingML namespace. */
@@ -68,6 +71,7 @@ function canonical(name: string, scope: Map<string, string>, isElement: boolean)
   if (prefix === 'xml' || prefix === 'xmlns') return name;
   const uri = scope.get(prefix);
   const wanted = uri ? CANONICAL_PREFIXES[uri] : undefined;
+  if (wanted === '' && isElement) return name.slice(colon + 1);
   return wanted && wanted !== prefix ? `${wanted}${name.slice(colon)}` : name;
 }
 

@@ -17,6 +17,19 @@ export interface BibEntry {
   fields: Record<string, string>;
 }
 
+/** One source of a citation, with the words the author put around it. */
+export interface CiteItem {
+  key: string;
+  /** Text before the source, such as "see" or "vgl.". */
+  prefix?: string;
+  /** The page, or the place given by `label`, such as "12-14". */
+  locator?: string;
+  /** What the locator counts, in CSL's words: page (the default), chapter, section, … */
+  label?: string;
+  /** Text after the source, such as "for a review". */
+  suffix?: string;
+}
+
 interface Person {
   family: string;
   given?: string;
@@ -28,6 +41,8 @@ export class Bibliography {
   readonly entries = new Map<string, BibEntry>();
   /** Word's source tag, a CSL item id or a title → the key used here. */
   readonly #aliases = new Map<string, string>();
+  /** Sources from Word's own source list. Word's bibliography lists all of them, cited or not. */
+  wordSources = 0;
 
   get size(): number {
     return this.entries.size;
@@ -92,14 +107,15 @@ export class Bibliography {
       if (editors.length > 0) fields.editor = editors.map(formatPerson).join(' and ');
       const key = this.#add([`word:${tag}`], type, people, fields, tag);
       this.#aliases.set(`word:${tag}`, key);
+      this.wordSources++;
     }
   }
 
   /**
-   * Adds the items of a Zotero or Mendeley citation. Returns their keys, and
-   * the page (or other locator) when the citation names one.
+   * Adds the items of a Zotero or Mendeley citation. Returns one item per
+   * source, with its page (or other locator) and the words around it.
    */
-  addCslCitation(json: string): { keys: string[]; locator?: string } {
+  addCslCitation(json: string): CiteItem[] {
     let data: unknown;
     try {
       data = JSON.parse(json);
@@ -108,20 +124,15 @@ export class Bibliography {
       try {
         data = JSON.parse(json.slice(0, json.lastIndexOf('}') + 1));
       } catch {
-        return { keys: [] };
+        return [];
       }
     }
     const items = (data as { citationItems?: unknown[] } | null)?.citationItems;
-    if (!Array.isArray(items)) return { keys: [] };
-    const keys: string[] = [];
-    let locator: string | undefined;
+    if (!Array.isArray(items)) return [];
+    const text = (value: unknown) => (typeof value === 'string' || typeof value === 'number' ? String(value) : undefined);
+    const cited: CiteItem[] = [];
     for (const item of items) {
-      const record = item as { id?: unknown; uris?: unknown[]; uri?: unknown[]; itemData?: Record<string, unknown>; locator?: unknown; label?: unknown };
-      if (record.locator !== undefined && record.locator !== '') {
-        const label = typeof record.label === 'string' ? record.label : 'page';
-        const prefix = label === 'page' ? (/[-–,]/.test(String(record.locator)) ? 'pp.' : 'p.') : label === 'chapter' ? 'ch.' : label === 'section' ? 'sec.' : label;
-        locator = `${prefix}\u00a0${String(record.locator)}`;
-      }
+      const record = item as { id?: unknown; uris?: unknown[]; uri?: unknown[]; itemData?: Record<string, unknown>; locator?: unknown; label?: unknown; prefix?: unknown; suffix?: unknown };
       const itemData = record.itemData;
       if (!itemData) continue;
       const aliases = [
@@ -129,9 +140,15 @@ export class Bibliography {
         `csl-id:${String(record.id ?? itemData.id ?? '')}`,
         `title:${String(itemData.title ?? '').toLowerCase()}`,
       ];
-      keys.push(this.#addCsl(itemData, aliases));
+      cited.push({
+        key: this.#addCsl(itemData, aliases),
+        locator: text(record.locator),
+        label: text(record.label),
+        prefix: text(record.prefix),
+        suffix: text(record.suffix),
+      });
     }
-    return { keys, locator };
+    return cited;
   }
 
   #addCsl(item: Record<string, unknown>, aliases: string[]): string {
@@ -167,18 +184,21 @@ export class Bibliography {
     return this.#add(aliases, type, people, fields);
   }
 
-  /** Adds the records of an EndNote citation field and returns their keys. */
-  addEndNote(instruction: string): string[] {
+  /** Adds the records of an EndNote citation field. Returns one item per source, with the words around it. */
+  addEndNote(instruction: string): CiteItem[] {
     const start = instruction.indexOf('<EndNote');
     if (start === -1) return [];
     const root = parseXml(instruction.slice(start));
-    const keys: string[] = [];
+    const cited: CiteItem[] = [];
     for (const cite of descendants(root, 'Cite')) {
       const record = child(cite, 'record');
       const recNum = textOf(child(cite, 'RecNum')).trim();
+      // EndNote keeps a space at the end of a prefix as a backquote ("see`").
+      const words = (name: string) => textOf(child(cite, name)).replace(/`/g, ' ').trim() || undefined;
+      const around = { prefix: words('Prefix'), suffix: words('Suffix'), locator: words('Pages') };
       if (!record) {
         const known = this.lookup(`endnote:${recNum}`);
-        if (known) keys.push(known);
+        if (known) cited.push({ key: known, ...around });
         continue;
       }
       const get = (path: string[]) => {
@@ -203,9 +223,9 @@ export class Bibliography {
         url: get(['urls', 'related-urls', 'url']),
       };
       const key = this.#add([`endnote:${recNum}`, `title:${(fields.title ?? '').toLowerCase()}`], type, people, fields);
-      keys.push(key);
+      cited.push({ key, ...around });
     }
-    return keys;
+    return cited;
   }
 
   /** The references.bib file. */

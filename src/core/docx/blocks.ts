@@ -66,12 +66,30 @@ export type Block =
   | { kind: 'table'; head: string[]; body: string[]; spec: string; rows: number; deferred: string[]; caption?: PlacedCaption }
   | { kind: 'raw'; latex: string }
   | { kind: 'toc'; which: 'contents' | 'figures' | 'tables' }
-  | { kind: 'bibliography' };
+  /**
+   * Where the bibliography goes. `typed` marks the start of the list as Word wrote it inside its
+   * bibliography field; that list ends at the next 'bibliography-end'. `listed` marks one whose Word
+   * heading, listed in Word's table of contents, LaTeX's own replaces, so it is listed there too.
+   */
+  | { kind: 'bibliography'; typed?: boolean; listed?: boolean }
+  | { kind: 'bibliography-end' };
 
 /** Tokens in the text that are filled in once the whole document is read. */
 export const TOKEN = '\u0001';
 
-export const CAPTION_PREFIX = /^\s*(figure|fig\.?|abbildung|abb\.?|bild|grafik|table|tab\.?|tabelle|chart|diagramm|figura|tabla|tabella|afbeelding|tabel)\s*[0-9]*(?:[.\-–][0-9]+)*\s*[:.\-–—]?\s*/i;
+// Spaces and dashes in plain text and in LaTeX, which writes Word's fixed spaces as ~ or \, and dashes as -- or ---.
+const GAP = String.raw`(?:\s|~|\\,)*`;
+const DASH = String.raw`(?:---?|[:.\-–—])`;
+
+/**
+ * "Figure 3:", "Abb. 2.1 –", "Tabelle 1": a caption's label word, then a number or a separator. A word
+ * that goes on ("Tablets", "Bilder") or has neither ("Chart of sales") is the caption's text.
+ */
+export const CAPTION_PREFIX = new RegExp(
+  String.raw`^\s*(figure|fig\.?|abbildung|abb\.?|bild|grafik|table|tab\.?|tabelle|chart|diagramm|figura|tabla|tabella|afbeelding|tabel)(?![a-zß-öø-ÿ])` +
+    String.raw`${GAP}(?:[0-9]+(?:(?:---?|[.\-–—])[0-9]+)*${GAP}${DASH}?|${DASH})\s*`,
+  'i',
+);
 
 /** A block written as running text, for table cells and footnotes. */
 export function flatBlock(block: Block): string {

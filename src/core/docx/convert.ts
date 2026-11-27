@@ -13,7 +13,7 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { encodeText } from '../hash';
 import type { Path } from '../types';
-import { Bibliography } from './citations';
+import { Bibliography, type CiteItem } from './citations';
 import { escapeText, escapeUrl, newEscapeStats, type EscapeStats } from './latex-text';
 import { ommlParagraph, ommlToLatex, type MathStats } from './omml';
 import { child, childrenNamed, descendants, elements, flag, parseXml, textOf, val, type XmlElement } from './xml';
@@ -41,7 +41,7 @@ import {
   TOKEN,
   withLabels,
 } from './blocks';
-import { isZip, isOle, readNotes, readRels, type Rel } from './package';
+import { findPart, isOle, isZip, readNotes, readRels, xmlText, type Rel } from './package';
 import { enumLabel, isOrdered, Numbering, readRunProps, type RunProps, Styles } from './styles';
 
 export interface ConvertOptions {
@@ -100,6 +100,34 @@ interface Field {
   phase: 'code' | 'result';
   mode: 'keep' | 'capture' | 'drop';
   buffer: Seg[];
+  /** A bibliography field whose result (the list Word wrote) is marked in the blocks. */
+  typedBibliography?: boolean;
+}
+
+/** Word's bibliography field, or the one a reference manager inserts (Zotero, Mendeley, EndNote, Citavi, …). */
+function isBibliography(instr: string): boolean {
+  const word = instr.trim().split(/\s+/)[0]?.toUpperCase() ?? '';
+  return word === 'BIBLIOGRAPHY' || (word === 'ADDIN' && /BIBL|REFLIST/i.test(instr) && !/CSL_CITATION/.test(instr));
+}
+
+/** Short names for what a citation's locator counts, per language; English is used for other languages. */
+const LOCATOR_LABELS: Record<string, Record<string, readonly [string, string]>> = {
+  en: { page: ['p.', 'pp.'], chapter: ['ch.', 'chs.'], section: ['sec.', 'secs.'], paragraph: ['para.', 'paras.'], figure: ['fig.', 'figs.'], volume: ['vol.', 'vols.'], line: ['l.', 'll.'], note: ['n.', 'nn.'], column: ['col.', 'cols.'] },
+  de: { page: ['S.', 'S.'], chapter: ['Kap.', 'Kap.'], section: ['Abschn.', 'Abschn.'], paragraph: ['Abs.', 'Abs.'], figure: ['Abb.', 'Abb.'], volume: ['Bd.', 'Bde.'], line: ['Z.', 'Z.'], note: ['Anm.', 'Anm.'], column: ['Sp.', 'Sp.'] },
+};
+
+/** "S. 12", "pp. 3-5", "ch. 2": the locator with its label, in the document's language. */
+function locatorText(locator: string, label: string | undefined, language: string | undefined): string {
+  const kind = (label || 'page').toLowerCase();
+  const names = LOCATOR_LABELS[(language ?? '').toLowerCase().split('-')[0] ?? ''] ?? LOCATOR_LABELS.en!;
+  const pair = names[kind] ?? LOCATOR_LABELS.en![kind];
+  const many = /[-\u2013\u2014,&]/.test(locator);
+  return `${pair ? pair[many ? 1 : 0] : kind}\u00a0${locator.trim()}`;
+}
+
+/** Text a reference manager stored around a citation, without its markup and leading punctuation. */
+function citeWords(text: string | undefined, leading: RegExp): string {
+  return (text ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').replace(leading, '').trim();
 }
 
 /** A paragraph that starts like "Figure 3: …" but was not given the Caption style. */
@@ -110,6 +138,23 @@ const FIGURE_WORD = /^(figure|fig|abbildung|abb|bild|grafik|chart|diagramm|figur
 const TABLE_WORD = /^(table|tab|tabelle|tabla|tabella|tabel)/i;
 
 const PLACEHOLDER_AUTHORS = /^(microsoft( office)?( user)?|user|admin(istrator)?|windows user|owner|benutzer|apache poi|python-docx|unknown|author|autor|word|default)$/i;
+
+/**
+ * Prefixes of the namespaces whose content is read here. A mc:Choice that
+ * requires another one (a 3D model, ink, a new chart type) gives way to the
+ * next choice or to the fallback, usually a picture.
+ */
+const UNDERSTOOD = new Set(['w', 'w10', 'w14', 'w15', 'w16', 'w16se', 'w16cid', 'w16cex', 'w16du', 'w16sdtdh', 'w16sdtfl', 'wne', 'wp', 'wp14', 'wps', 'wpg', 'wpc', 'a', 'a14', 'pic', 'v', 'o', 'm', 'r', 'mc']);
+
+/** The content of mc:AlternateContent to read (ECMA-376 Part 3, 10.2): the first understood choice, else the fallback. */
+function alternate(node: XmlElement): XmlElement[] {
+  for (const choice of childrenNamed(node, 'mc:Choice')) {
+    const requires = (choice.attrs.Requires ?? '').split(/\s+/).filter(Boolean);
+    if (requires.every((prefix) => UNDERSTOOD.has(prefix))) return elements(choice);
+  }
+  const fallback = child(node, 'mc:Fallback');
+  return fallback ? elements(fallback) : [];
+}
 
 export class Converter {
   readonly warnings = new Set<string>();
@@ -133,6 +178,12 @@ export class Converter {
   date: string | null = null;
   /** The letter of a drop cap, waiting for the paragraph it starts. */
   dropCap = '';
+  /** A bibliography field ended; its end is marked after the paragraph it ended in. */
+  closeBibliography = false;
+  /** The document has Word's own bibliography field, which lists every source of the document. */
+  wordBibliography = false;
+  /** A heading came, so a Title-styled paragraph from now on is part of the text. */
+  seenHeading = false;
   usedPackages = new Set<string>();
   /** Bookmark names that a reference points to. */
   referenced = new Set<string>();
@@ -173,7 +224,6 @@ export class Converter {
     const word = instr.trim().split(/\s+/)[0]?.toUpperCase() ?? '';
     switch (word) {
       case 'TOC':
-      case 'BIBLIOGRAPHY':
       case 'CITATION':
       case 'PAGE':
       case 'NUMPAGES':
@@ -189,7 +239,6 @@ export class Converter {
         return 'capture';
       case 'ADDIN': {
         const kind = instr.trim().split(/\s+/)[1]?.toUpperCase() ?? '';
-        if (/BIBL|REFLIST|BIBLIOGRAPHY/.test(instr.toUpperCase()) && !/CSL_CITATION/.test(instr)) return 'drop';
         if (kind === 'EN.CITE' && instr.includes('<EndNote')) return 'drop';
         if (instr.includes('CSL_CITATION') && instr.includes('{')) return 'drop';
         return 'keep';
@@ -200,6 +249,40 @@ export class Converter {
   }
 
   /** What a finished field leaves in the text. */
+  /** A field's result starts: its mode is known now, and a bibliography's list is marked. */
+  enterResult(field: Field): void {
+    field.mode = this.fieldMode(field.instr);
+    if (isBibliography(field.instr) && this.fields.length === 1 && !this.inTable && !this.inFootnote) {
+      this.blocks.push({ kind: 'bibliography', typed: true });
+      field.typedBibliography = true;
+    }
+  }
+
+  /**
+   * \cite for the sources of one citation. Words around a source stay with it:
+   * "vgl. \cite[S.~12]{key}". Several sources with words or pages of their own
+   * get one \cite each, since \cite has room for only one note.
+   */
+  citeLatex(items: CiteItem[]): string {
+    const seen = new Set<string>();
+    const unique = items.filter((item) => {
+      if (seen.has(item.key)) return false;
+      seen.add(item.key);
+      return true;
+    });
+    const arg = (text: string) => escapeText(text, this.escapeStats);
+    const notes = unique.map((item) =>
+      [item.locator?.trim() ? locatorText(item.locator, item.label, this.styles.language) : '', citeWords(item.suffix, /^[\s,;:]+/)].filter(Boolean).join(', '),
+    );
+    const prefixes = unique.map((item) => citeWords(item.prefix, /^\s+/));
+    const one = (key: string, prefix: string, note: string) =>
+      `${prefix ? `${arg(prefix)}~` : ''}\\cite${note ? `[${/[[\]]/.test(note) ? `{${arg(note)}}` : arg(note)}]` : ''}{${key}}`;
+    if (unique.length === 1 || (notes.every((note) => !note) && prefixes.slice(1).every((prefix) => !prefix))) {
+      return one(unique.map((item) => item.key).join(','), prefixes[0] ?? '', notes[0] ?? '');
+    }
+    return unique.map((item, k) => one(item.key, prefixes[k]!, notes[k]!)).join('; ');
+  }
+
   finishField(field: Field, para: Seg[]): void {
     const instr = field.instr.trim();
     const words = splitInstruction(instr);
@@ -211,33 +294,53 @@ export class Converter {
       this.blocks.push({ kind: 'toc', which });
       return;
     }
-    if (word === 'BIBLIOGRAPHY' || (word === 'ADDIN' && field.mode === 'drop' && !/CSL_CITATION|EN\.CITE/.test(instr))) {
-      this.blocks.push({ kind: 'bibliography' });
+    if (isBibliography(instr)) {
+      if (word === 'BIBLIOGRAPHY') this.wordBibliography = true;
+      // The list Word wrote stays in the blocks between marks; see resolveBibliographies in assemble.ts.
+      if (field.typedBibliography) this.closeBibliography = true;
+      else this.blocks.push({ kind: 'bibliography' });
       return;
     }
     if (word === 'CITATION') {
-      const keys: string[] = [];
-      const tags = [words[1], ...words.flatMap((item, k) => (item === '\\m' ? [words[k + 1]] : []))].filter((tag): tag is string => !!tag);
-      for (const tag of tags) {
-        const key = this.bib.lookup(`word:${tag}`);
-        if (key) keys.push(key);
+      // CITATION Tag1 \p 12 \f "see" \m Tag2 \s "for a review": the switches belong to the source before them.
+      const items: CiteItem[] = [];
+      let current: CiteItem | null = null;
+      let unknown = false;
+      for (let k = 0; k < words.length; k++) {
+        const item = words[k]!;
+        const value = words[k + 1];
+        if (k === 0) continue;
+        if (k === 1 || item.toLowerCase() === '\\m') {
+          const tag = k === 1 ? item : value;
+          if (k !== 1) k++;
+          const key = tag ? this.bib.lookup(`word:${tag}`) : undefined;
+          current = key ? { key } : null;
+          if (current) items.push(current);
+          else unknown = true;
+          continue;
+        }
+        const name = item.toLowerCase();
+        if (current && value !== undefined && (name === '\\p' || name === '\\f' || name === '\\s')) {
+          if (name === '\\p') current.locator = value;
+          else if (name === '\\f') current.prefix = value;
+          else current.suffix = value;
+          k++;
+        }
       }
-      if (keys.length === 0) {
+      if (items.length === 0 || unknown) {
+        // A source that is not in the document's list: keep what Word shows.
         out(textSeg(field.buffer.map((seg) => seg.plain).join('') || '[?]', 0, this.escapeStats));
         return;
       }
-      const page = switchValue(words, '\\p');
       this.counts.citations++;
-      out({ latex: `${page ? `\\cite[p.~${escapeText(page)}]` : '\\cite'}{${keys.join(',')}}`, plain: '', flags: 0, raw: true });
+      out({ latex: this.citeLatex(items), plain: '', flags: 0, raw: true });
       return;
     }
     if (word === 'ADDIN' && field.mode === 'drop') {
-      const cited = instr.includes('<EndNote') ? { keys: this.bib.addEndNote(instr), locator: undefined } : this.bib.addCslCitation(instr.slice(instr.indexOf('{')));
-      const keys = [...new Set(cited.keys)];
-      if (keys.length === 0) return;
+      const items = instr.includes('<EndNote') ? this.bib.addEndNote(instr) : this.bib.addCslCitation(instr.slice(instr.indexOf('{')));
+      if (items.length === 0) return;
       this.counts.citations++;
-      const note = keys.length === 1 && cited.locator ? `[${escapeText(cited.locator, this.escapeStats)}]` : '';
-      out({ latex: `\\cite${note}{${keys.join(',')}}`, plain: '', flags: 0, raw: true });
+      out({ latex: this.citeLatex(items), plain: '', flags: 0, raw: true });
       return;
     }
     if (word === 'REF' || word === 'PAGEREF' || word === 'NOTEREF') {
@@ -308,8 +411,8 @@ export class Converter {
         }
         case 'w:fldSimple': {
           const field: Field = { instr: node.attrs['w:instr'] ?? '', phase: 'result', mode: 'keep', buffer: [] };
-          field.mode = this.fieldMode(field.instr);
           this.fields.push(field);
+          this.enterResult(field);
           this.inline(elements(node), para, extra, baseRun, inLink);
           this.fields.pop();
           this.finishField(field, para);
@@ -329,7 +432,7 @@ export class Converter {
           this.inline(elements(child(node, 'w:sdtContent') ?? node), para, extra, baseRun, inLink);
           break;
         case 'mc:AlternateContent':
-          this.inline(elements(child(node, 'mc:Choice') ?? child(node, 'mc:Fallback') ?? node), para, extra, baseRun, inLink);
+          this.inline(alternate(node), para, extra, baseRun, inLink);
           break;
         case 'w:bookmarkStart': {
           const name = node.attrs['w:name'];
@@ -413,7 +516,7 @@ export class Converter {
             const top = this.fields[this.fields.length - 1];
             if (top && top.phase === 'code') {
               top.phase = 'result';
-              top.mode = this.fieldMode(top.instr);
+              this.enterResult(top);
             }
           } else if (type === 'end') {
             const top = this.fields.pop();
@@ -451,7 +554,7 @@ export class Converter {
           break;
         }
         case 'mc:AlternateContent':
-          this.run({ ...node, children: (child(item, 'mc:Choice') ?? child(item, 'mc:Fallback') ?? item).children }, para, extra, baseRun, inLink);
+          this.run({ ...node, children: alternate(item) }, para, extra, baseRun, inLink);
           break;
         case 'm:oMath':
         case 'm:oMathPara':
@@ -554,42 +657,50 @@ export class Converter {
 
   body(nodes: XmlElement[]): void {
     for (const node of nodes) {
-      switch (node.name) {
-        case 'w:p':
-          this.paragraph(node);
-          break;
-        case 'w:tbl':
-          this.table(node);
-          break;
-        case 'w:sdt':
-          if (child(child(node, 'w:sdtPr'), 'w:showingPlcHdr')) break;
-          this.body(elements(child(node, 'w:sdtContent') ?? node));
-          break;
-        case 'w:customXml':
-        case 'w:ins':
-        case 'w:moveTo':
-          this.body(elements(node));
-          break;
-        case 'mc:AlternateContent':
-          this.body(elements(child(node, 'mc:Choice') ?? child(node, 'mc:Fallback') ?? node));
-          break;
-        case 'w:bookmarkStart': {
-          const name = node.attrs['w:name'];
-          if (name && name !== '_GoBack') this.pendingBookmarks.push(name);
-          break;
-        }
-        case 'w:altChunk':
-          this.warn('Parts of the document that were pasted in as embedded files (altChunk) were left out.');
-          break;
-        case 'm:oMathPara': {
-          const para: Seg[] = [];
-          this.inline([node], para, { images: [], bookmarks: [], after: [] }, {});
-          if (para.length) this.blocks.push({ kind: 'raw', latex: para.map((seg) => seg.latex).join('').trim() });
-          break;
-        }
-        default:
-          break;
+      this.bodyElement(node);
+      if (this.closeBibliography && !this.inTable && !this.inFootnote) {
+        this.blocks.push({ kind: 'bibliography-end' });
+        this.closeBibliography = false;
       }
+    }
+  }
+
+  bodyElement(node: XmlElement): void {
+    switch (node.name) {
+      case 'w:p':
+        this.paragraph(node);
+        break;
+      case 'w:tbl':
+        this.table(node);
+        break;
+      case 'w:sdt':
+        if (child(child(node, 'w:sdtPr'), 'w:showingPlcHdr')) break;
+        this.body(elements(child(node, 'w:sdtContent') ?? node));
+        break;
+      case 'w:customXml':
+      case 'w:ins':
+      case 'w:moveTo':
+        this.body(elements(node));
+        break;
+      case 'mc:AlternateContent':
+        this.body(alternate(node));
+        break;
+      case 'w:bookmarkStart': {
+        const name = node.attrs['w:name'];
+        if (name && name !== '_GoBack') this.pendingBookmarks.push(name);
+        break;
+      }
+      case 'w:altChunk':
+        this.warn('Parts of the document that were pasted in as embedded files (altChunk) were left out.');
+        break;
+      case 'm:oMathPara': {
+        const para: Seg[] = [];
+        this.inline([node], para, { images: [], bookmarks: [], after: [] }, {});
+        if (para.length) this.blocks.push({ kind: 'raw', latex: para.map((seg) => seg.latex).join('').trim() });
+        break;
+      }
+      default:
+        break;
     }
   }
 
@@ -598,10 +709,13 @@ export class Converter {
     const styleId = val(pPr, 'w:pStyle');
     const styles = this.styles;
     const headingLevel = this.inTable || this.inFootnote ? null : (val(pPr, 'w:outlineLvl') !== undefined && Number(val(pPr, 'w:outlineLvl')) < 9 ? Number(val(pPr, 'w:outlineLvl')) + 1 : styles.headingLevel(styleId));
-    const isTitle = !this.inTable && !this.inFootnote && styles.is(styleId, /^title$|^titel$/);
-    const isSubtitle = !this.inTable && !this.inFootnote && styles.is(styleId, /^subtitle$|^untertitel$/);
-    const isAuthor = !this.inTable && !this.inFootnote && styles.is(styleId, /^author$|^autor$|^authors$/);
-    const isDate = !this.inTable && !this.inFootnote && this.title.length > 0 && styles.is(styleId, /^date$|^datum$/);
+    // Title, subtitle, author and date go to \maketitle until the first heading; after it they are part of the text.
+    const titleBlock = !this.inTable && !this.inFootnote && !this.seenHeading;
+    const titleStyle = styles.is(styleId, /^title$|^titel$/) ? 'title' : styles.is(styleId, /^subtitle$|^untertitel$/) ? 'subtitle' : null;
+    const isTitle = titleBlock && titleStyle === 'title';
+    const isSubtitle = titleBlock && titleStyle === 'subtitle';
+    const isAuthor = titleBlock && styles.is(styleId, /^author$|^autor$|^authors$/);
+    const isDate = titleBlock && this.title.length > 0 && styles.is(styleId, /^date$|^datum$/);
     const dropCap = child(pPr, 'w:framePr')?.attrs['w:dropCap'];
     const isCaption = styles.is(styleId, /^caption$|^beschriftung$/);
     const isToc = styles.is(styleId, /^toc \d|^verzeichnis \d|^table of figures$|^abbildungsverzeichnis$/);
@@ -713,6 +827,7 @@ export class Converter {
       return;
     }
     if (headingLevel !== null) {
+      this.seenHeading = true;
       const full = segsToLatex(segs, true);
       const text = stripHeadingNumber(full) || full;
       const plainText = stripHeadingNumber(plain) || plain;
@@ -765,7 +880,9 @@ export class Converter {
     } else {
       const jc = val(pPr, 'w:jc') ?? styles.alignment(styleId);
       const align = this.inTable || this.inFootnote ? undefined : jc === 'center' ? 'center' : jc === 'right' || jc === 'end' ? 'right' : undefined;
-      this.blocks.push({ kind: 'para', latex: withLabels(latex, extra.bookmarks), plain, align, quote: isQuote && !this.inTable, bookmarks: [] });
+      // A Title-styled paragraph after the first heading, such as a second part's title, keeps its look.
+      const styled = titleStyle && !this.inTable && !this.inFootnote && latex.trim() ? `{${titleStyle === 'title' ? '\\LARGE\\bfseries' : '\\Large'} ${latex}\\par}` : latex;
+      this.blocks.push({ kind: 'para', latex: withLabels(styled, extra.bookmarks), plain, align, quote: isQuote && !this.inTable, bookmarks: [] });
     }
     for (const image of extra.images.filter((item) => item.anchored)) this.blocks.push({ kind: 'figure', images: [image], bookmarks: [] });
     finish();
@@ -945,6 +1062,44 @@ function symbolChar(font: string, code: number): string {
 }
 
 /** Converts a .docx file to the files of a LaTeX project. */
+/**
+ * The entries of the zip. A damaged entry (say, one picture) does not stop the
+ * rest: then the entries are read one by one and the damaged ones left out.
+ * Names written with backslashes get forward slashes.
+ */
+function unzipParts(bytes: Uint8Array): { files: Record<string, Uint8Array>; damaged: number } {
+  const tidy = (entries: Record<string, Uint8Array>) => {
+    const out: Record<string, Uint8Array> = {};
+    for (const [name, data] of Object.entries(entries)) out[name.replace(/\\/g, '/').replace(/^\/+/, '')] = data;
+    return out;
+  };
+  try {
+    return { files: tidy(unzipSync(bytes)), damaged: 0 };
+  } catch {
+    const names: string[] = [];
+    try {
+      unzipSync(bytes, {
+        filter: (file) => {
+          names.push(file.name);
+          return false;
+        },
+      });
+    } catch {
+      throw new DocxError('The Word file could not be opened. It may be damaged.');
+    }
+    const files: Record<string, Uint8Array> = {};
+    let damaged = 0;
+    for (const name of names) {
+      try {
+        Object.assign(files, unzipSync(bytes, { filter: (file) => file.name === name }));
+      } catch {
+        damaged++;
+      }
+    }
+    return { files: tidy(files), damaged };
+  }
+}
+
 export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {}): Promise<ConvertedProject> {
   const fileName = options.fileName ?? 'document.docx';
   if (isOle(bytes)) {
@@ -954,19 +1109,32 @@ export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {
         : 'This Word file is password protected or in an older format. Save it as an unprotected .docx and try again.',
     );
   }
-  if (!isZip(bytes)) throw new DocxError('This does not look like a Word file (.docx).');
-  let files: Record<string, Uint8Array>;
-  try {
-    files = unzipSync(bytes);
-  } catch {
-    throw new DocxError('The Word file could not be opened. It may be damaged.');
+  if (!isZip(bytes)) {
+    const head = strFromU8(bytes.subarray(0, 2000));
+    if (/<\?mso-application progid="Word\.Document"|<pkg:package|<w:wordDocument/.test(head)) {
+      throw new DocxError('This is a Word XML file (.xml). Open it in Word and save it as .docx ("Word Document"), then import that file.');
+    }
+    throw new DocxError('This does not look like a Word file (.docx).');
   }
-  const text = (path: string | undefined) => (path && files[path] ? strFromU8(files[path]) : undefined);
+  const { files, damaged } = unzipParts(bytes);
+  const text = (path: string | undefined) => {
+    const found = path ? findPart(files, path) : undefined;
+    return found ? xmlText(files[found]!) : undefined;
+  };
 
   const packageRels = readRels(files, '');
-  const officeDoc = [...packageRels.values()].find((rel) => rel.type.endsWith('/officeDocument'))?.target ?? 'word/document.xml';
+  const officeDoc = [...packageRels.values()].find((rel) => rel.type.endsWith('/officeDocument'))?.target ?? findPart(files, 'word/document.xml') ?? 'word/document.xml';
   const documentXml = text(officeDoc);
-  if (!documentXml) throw new DocxError('This file has no Word document inside. Is it a .docx file?');
+  if (/^(xl|ppt)\//i.test(officeDoc) || (documentXml && /<\w*:?(workbook|presentation)\b/.test(documentXml.slice(0, 3000)))) {
+    throw new DocxError(/^xl\//i.test(officeDoc) || /workbook/.test(documentXml?.slice(0, 3000) ?? '') ? 'This is an Excel workbook, not a Word document.' : 'This is a PowerPoint presentation, not a Word document.');
+  }
+  if (!documentXml) {
+    if (damaged > 0) throw new DocxError('The Word file could not be opened. It may be damaged.');
+    if (files.mimetype && strFromU8(files.mimetype).includes('opendocument')) {
+      throw new DocxError('This is an OpenDocument file (.odt), not a Word file. Open it in LibreOffice and save it as Word (.docx), then import that file.');
+    }
+    throw new DocxError('This file has no Word document inside. Is it a .docx file?');
+  }
 
   const rels = readRels(files, officeDoc);
   const relOf = (suffix: string) => [...rels.values()].find((rel) => rel.type.endsWith(suffix) && !rel.external)?.target;
@@ -978,11 +1146,12 @@ export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {
   const endnoteRels = relOf('/endnotes') ? readRels(files, relOf('/endnotes')!) : new Map<string, Rel>();
   const conv = new Converter(rels, styles, numbering, { footnotes, endnotes, footnoteRels, endnoteRels });
   if (endnotes.size > 0) conv.warn('Endnotes became footnotes.');
+  if (damaged > 0) conv.warn(`${damaged === 1 ? 'One part' : `${damaged} parts`} of the Word file could not be read (damaged) and were left out, such as a picture.`);
 
   // Word's own reference sources live in a customXml part.
   for (const [path, data] of Object.entries(files)) {
-    if (!/^customXml\/item\d+\.xml$/.test(path)) continue;
-    const xml = strFromU8(data);
+    if (!/^customXml\/item\d+\.xml$/i.test(path)) continue;
+    const xml = xmlText(data);
     if (xml.includes('Sources') && xml.includes('SourceType')) conv.bib.addWordSources(xml);
   }
 
@@ -991,7 +1160,6 @@ export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {
   for (const partRels of [rels, footnoteRels, endnoteRels]) {
     for (const rel of partRels.values()) if (REL_IMAGE.test(rel.type) && !rel.external) imageParts.add(rel.target);
   }
-  let unsupported = 0;
   for (const part of imageParts) {
     const data = files[part];
     if (!data) continue;
@@ -1008,11 +1176,7 @@ export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {
       }
     }
     if (ext === 'jpg' || SUPPORTED_IMAGES.has(ext)) supported = true;
-    if (!supported) unsupported++;
     conv.images.set(part, { bytes: out, ext, supported, name: null });
-  }
-  if (unsupported > 0) {
-    conv.warn(`${unsupported === 1 ? 'One picture is' : `${unsupported} pictures are`} in a format pdfLaTeX cannot show (such as EMF or WMF). The files are in images/ and marked in the text; convert them to PNG or PDF.`);
   }
 
   const document = parseXml(documentXml);
@@ -1027,6 +1191,11 @@ export async function convertDocx(bytes: Uint8Array, options: ConvertOptions = {
   }
 
   conv.body(elements(body));
+  // Only pictures the text shows count: Word 365 keeps an SVG next to the PNG it shows.
+  const unsupported = [...conv.usedImages].filter((part) => conv.images.get(part)?.supported === false).length;
+  if (unsupported > 0) {
+    conv.warn(`${unsupported === 1 ? 'One picture is' : `${unsupported} pictures are`} in a format pdfLaTeX cannot show (such as EMF or WMF). The files are in images/ and marked in the text; convert them to PNG or PDF.`);
+  }
   if (conv.escapeStats.unknown.size > 0) {
     const sample = [...conv.escapeStats.unknown.keys()].slice(0, 8).join(' ');
     const total = [...conv.escapeStats.unknown.values()].reduce((a, b) => a + b, 0);

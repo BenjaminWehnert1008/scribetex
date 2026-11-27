@@ -66,13 +66,15 @@ export function assemble(conv: Converter, meta: { title: string; author: string 
   let refName: string | null = null;
   let contentsName: string | null = null;
   const lofNames: { figures?: string; tables?: string } = {};
+  blocks = resolveBibliographies(blocks, conv.bib.size > 0);
   // A heading right before the bibliography or a table of contents is replaced by LaTeX's own.
   const kept: Block[] = [];
-  for (const block of blocks) {
+  for (let block of blocks) {
     const previous = kept[kept.length - 1];
     if (block.kind === 'bibliography' && previous?.kind === 'heading') {
       refName = previous.latex;
       kept.pop();
+      block = { ...block, listed: hasToc };
     }
     if (block.kind === 'toc' && previous?.kind === 'heading') {
       if (block.which === 'contents') contentsName = previous.latex;
@@ -85,13 +87,13 @@ export function assemble(conv: Converter, meta: { title: string; author: string 
   blocks = kept;
   if (conv.bib.size > 0 && !blocks.some((block) => block.kind === 'bibliography')) {
     const last = blocks[blocks.length - 1];
-    if (last?.kind === 'heading' && REFERENCE_HEADINGS.test(last.plain)) {
+    const heading = last?.kind === 'heading' && REFERENCE_HEADINGS.test(last.plain);
+    if (heading) {
       refName = last.latex;
       blocks.pop();
     }
-    blocks.push({ kind: 'bibliography' });
+    blocks.push({ kind: 'bibliography', listed: heading && hasToc });
   }
-  if (conv.bib.size === 0) blocks = blocks.filter((block) => block.kind !== 'bibliography');
 
   const render = (list: Block[]): string => renderBlocks(list, conv, commands, top, labelNames);
 
@@ -108,16 +110,16 @@ export function assemble(conv: Converter, meta: { title: string; author: string 
   const taken = new Set<string>();
   let index = 0;
   const front = groups[0]!.blocks;
-  const tail: Block[] = [];
-  // The bibliography is written in main.tex, after the last chapter.
-  const takeBibliography = (list: Block[]) => {
+  // A bibliography that ends a chapter is written in main.tex, after that chapter: at the end, or before
+  // the chapters that follow it in Word, such as an appendix or a declaration.
+  const takeBibliography = (list: Block[]): Block[] => {
     const at = list.findIndex((block) => block.kind === 'bibliography');
     if (at !== -1 && list.slice(at + 1).every((block) => block.kind === 'bibliography' || (block.kind === 'para' && block.plain === ''))) {
-      tail.push(...list.splice(at));
+      return list.splice(at);
     }
+    return [];
   };
   if (split) {
-    for (const group of groups.slice(1)) takeBibliography(group.blocks);
     if (groups.length > 1 && front.length) {
       const text = render(front);
       if (text.trim()) {
@@ -133,15 +135,16 @@ export function assemble(conv: Converter, meta: { title: string; author: string 
       for (let n = 2; taken.has(unique); n++) unique = `${name}-${n}`;
       taken.add(unique);
       const path = `${folder}/${unique}.tex` as Path;
+      const bibliography = takeBibliography(group.blocks);
       parts.push({ path, text: render(group.blocks) });
       bodyLines.push(`${report ? '\\include' : '\\input'}{${path.replace(/\.tex$/, '')}}`);
+      if (bibliography.length) bodyLines.push(render(bibliography).trimEnd());
     }
   } else {
-    takeBibliography(blocks);
-    const text = render(blocks.filter((block) => !tail.includes(block)));
-    bodyLines.push(text);
+    const bibliography = takeBibliography(blocks);
+    bodyLines.push(render(blocks));
+    if (bibliography.length) bodyLines.push(render(bibliography).trimEnd());
   }
-  if (tail.length) bodyLines.push(render(tail));
 
   // Preamble
   const pt = conv.styles.fontSizeHalfPoints ? Math.round(conv.styles.fontSizeHalfPoints / 2) : 11;
@@ -173,10 +176,16 @@ export function assemble(conv: Converter, meta: { title: string; author: string 
   if (needs(/\\begin\{(itemize|enumerate)\}\[/)) pre.push('\\usepackage{enumitem}');
   if (needs(/\\(uline|sout)\{/)) pre.push('\\usepackage[normalem]{ulem}');
   pre.push('\\usepackage[hidelinks]{hyperref}');
-  if (refName) pre.push(`\\renewcommand{\\${report ? 'bibname' : 'refname'}}{${refName}}`);
-  if (contentsName) pre.push(`\\renewcommand{\\contentsname}{${contentsName}}`);
-  if (lofNames.figures) pre.push(`\\renewcommand{\\listfigurename}{${lofNames.figures}}`);
-  if (lofNames.tables) pre.push(`\\renewcommand{\\listtablename}{${lofNames.tables}}`);
+  // The names Word gave these headings.
+  const names = [
+    refName ? `\\renewcommand{\\${report ? 'bibname' : 'refname'}}{${refName}}` : '',
+    contentsName ? `\\renewcommand{\\contentsname}{${contentsName}}` : '',
+    lofNames.figures ? `\\renewcommand{\\listfigurename}{${lofNames.figures}}` : '',
+    lofNames.tables ? `\\renewcommand{\\listtablename}{${lofNames.tables}}` : '',
+  ].filter(Boolean);
+  // babel sets its own names when the document begins, so they are changed after that.
+  if (names.length && babel) pre.push('% The heading names from the Word file. babel sets its own when the document begins, so these come after.', '\\AtBeginDocument{%', ...names.map((line) => `  ${line}`), '}');
+  else pre.push(...names);
   pre.push('');
   const titleLatex = conv.title.length ? conv.title.join(' \\\\ ') : escapeText(meta.title);
   const fullTitle = conv.subtitle.length ? `${titleLatex}\\\\[1ex]\\large ${conv.subtitle.join(' \\\\ ')}` : titleLatex;
@@ -243,6 +252,34 @@ export function attachCaptions(blocks: Block[]): Block[] {
     const float = floats.get(block);
     if (float && (block.kind === 'figure' || block.kind === 'table')) out.push({ ...block, caption: { ...float.caption, above: float.above } });
     else out.push(block);
+  }
+  return out;
+}
+
+/**
+ * Word's bibliography field holds the list as Word wrote it. When the
+ * references are known, BibTeX writes the list instead; otherwise (a reference
+ * manager whose citations are not understood, such as Citavi) Word's list stays
+ * as text, with its heading.
+ */
+export function resolveBibliographies(blocks: Block[], known: boolean): Block[] {
+  const out: Block[] = [];
+  let skipping = false;
+  for (let k = 0; k < blocks.length; k++) {
+    const block = blocks[k]!;
+    if (block.kind === 'bibliography-end') {
+      skipping = false;
+      continue;
+    }
+    if (skipping) continue;
+    if (block.kind === 'bibliography') {
+      if (!known) continue;
+      out.push({ kind: 'bibliography' });
+      // Without an end mark the field never closed; then nothing is skipped.
+      skipping = !!block.typed && blocks.slice(k + 1).some((next) => next.kind === 'bibliography-end');
+      continue;
+    }
+    out.push(block);
   }
   return out;
 }
@@ -406,8 +443,19 @@ export function renderBlocks(blocks: Block[], conv: Converter, commands: string[
         out.push(block.which === 'contents' ? '\\tableofcontents' : block.which === 'figures' ? '\\listoffigures' : '\\listoftables');
         k++;
         break;
-      case 'bibliography':
-        out.push('\\bibliographystyle{plain}\n\\bibliography{references}');
+      case 'bibliography': {
+        // Word's bibliography lists every source of the document, also those not cited.
+        const lines = conv.wordBibliography && conv.bib.wordSources > 0 ? ['\\nocite{*}', '\\bibliographystyle{plain}'] : ['\\bibliographystyle{plain}'];
+        if (block.listed) {
+          // LaTeX leaves its bibliography heading out of the contents, where Word listed the heading it replaces.
+          const chapter = commands[0] === 'chapter';
+          lines.push(...(chapter ? ['\\clearpage'] : []), '\\phantomsection', `\\addcontentsline{toc}{${commands[0]}}{${chapter ? '\\bibname' : '\\refname'}}`);
+        }
+        out.push([...lines, '\\bibliography{references}'].join('\n'));
+        k++;
+        break;
+      }
+      case 'bibliography-end':
         k++;
         break;
       case 'caption':

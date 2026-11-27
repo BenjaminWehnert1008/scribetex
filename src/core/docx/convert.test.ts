@@ -1,4 +1,4 @@
-import { strFromU8, zipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { convertDocx, DocxError, type ConvertedProject } from './convert';
 import { ommlToLatex } from './omml';
@@ -197,6 +197,160 @@ describe('convertDocx', () => {
     expect(text).toContain('First \\cite{curie1903} and again \\cite[pp.~12-14]{curie1903}');
     expect(text).toContain('\\bibliography{references}');
     expect(file(result, 'references.bib')).toContain('@article{curie1903,\n  author  = {Curie, A.},\n  title   = {{On Curie}},\n  journal = {Journal},\n  year    = {1903}\n}');
+  });
+
+  it('keeps the words around a citation, with page labels in the document language', async () => {
+    const csl = (items: string[]) => `ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x","citationItems":[${items.join(',')}]}`;
+    const item = (id: string, family: string, extra = '') =>
+      `{"id":"${id}","uris":["http://zotero.org/users/1/items/${id}"],${extra}"itemData":{"id":"${id}","type":"book","title":"Über ${family}","author":[{"family":"${family}","given":"A."}],"issued":{"date-parts":[["2019"]]}}}`;
+    const body = [
+      para(run('Indirekt ') + field(csl([item('B1', 'Wolf', '"prefix":"vgl.","locator":"12","label":"page",')]), '(vgl. Wolf 2019, S. 12)')),
+      para(run('Zwei ') + field(csl([item('B1', 'Wolf', '"locator":"3-5",'), item('B2', 'Berg', '"suffix":", mit Beispielen",')]), '(Wolf 2019, S. 3-5; Berg 2019, mit Beispielen)')),
+      para(run('Beide ') + field(csl([item('B1', 'Wolf', '"prefix":"siehe",'), item('B2', 'Berg')]), '(siehe Wolf 2019; Berg 2019)')),
+    ].join('');
+    const text = allTex(await convert(body, { lang: 'de-DE' }));
+    expect(text).toContain('Indirekt vgl.~\\cite[S.~12]{wolf2019}');
+    expect(text).toContain('Zwei \\cite[S.~3-5]{wolf2019}; \\cite[mit Beispielen]{berg2019}');
+    expect(text).toContain('Beide siehe~\\cite{wolf2019,berg2019}');
+  });
+
+  it('keeps the pages and words of Word citations, and lists uncited sources like Word', async () => {
+    const source = (tag: string, last: string, title: string, year: string) =>
+      `<b:Source><b:Tag>${tag}</b:Tag><b:SourceType>Book</b:SourceType><b:Author><b:Author><b:NameList><b:Person><b:Last>${last}</b:Last><b:First>A.</b:First></b:Person></b:NameList></b:Author></b:Author><b:Title>${title}</b:Title><b:Year>${year}</b:Year></b:Source>`;
+    const sources = `<b:Sources xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography">${source('Lam94', 'Lamport', 'LaTeX', '1994')}${source('Knu84', 'Knuth', 'The TeXbook', '1984')}${source('Uncited', 'Nobody', 'Read but not cited', '2001')}</b:Sources>`;
+    const body = [
+      para(run('As shown ') + field('CITATION Lam94 \\p 12 \\f "see" \\l 1033 \\m Knu84 \\s "for the details"', '(see Lamport, 1994, p. 12; Knuth, 1984 for the details)') + run('.')),
+      heading(1, 'References'),
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> BIBLIOGRAPHY </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run('Knuth, A. (1984). The TeXbook.')}</w:p>`,
+      `<w:p>${run('Nobody, A. (2001). Read but not cited.')}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+    ].join('');
+    const text = allTex(await convert(body, { sources }));
+    expect(text).toContain('As shown see~\\cite[p.~12]{lam94}; \\cite[for the details]{knu84}.');
+    expect(text).toContain('\\nocite{*}\n\\bibliographystyle{plain}\n\\bibliography{references}');
+    expect(text).not.toContain('Read but not cited.');
+    expect(text).not.toContain('\\section{References}');
+  });
+
+  it('keeps the bibliography Word wrote when its citations are not understood', async () => {
+    // Citavi's placeholders are not read, so its citations and its list stay as Word shows them.
+    const body = [
+      para(run('Wie gezeigt ') + field('ADDIN CitaviPlaceholder{eyJ9}', '(Wolf 2019, S. 12)') + run('.')),
+      heading(1, 'Literaturverzeichnis'),
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ADDIN CitaviBibliography </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run('Wolf, A. (2019): Über Dinge. Berlin.')}</w:p>`,
+      `<w:p>${run('Berg, B. (2020): Mehr Dinge. Wien.')}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+      para(run('Nach dem Verzeichnis.')),
+    ].join('');
+    const text = allTex(await convert(body, { lang: 'de-DE' }));
+    expect(text).toContain('Wie gezeigt (Wolf 2019, S. 12).');
+    expect(text).toContain('\\section*{Literaturverzeichnis}');
+    expect(text).toContain('Wolf, A. (2019): Über Dinge. Berlin.\n\nBerg, B. (2020): Mehr Dinge. Wien.\n\nNach dem Verzeichnis.');
+    expect(text).not.toContain('\\bibliography');
+  });
+
+  it('imports a German thesis: captions, the bibliography before the appendix, and its heading names', async () => {
+    const sources =
+      '<b:Sources xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography"><b:Source><b:Tag>Qua19</b:Tag><b:SourceType>Book</b:SourceType>' +
+      '<b:Author><b:Author><b:NameList><b:Person><b:Last>Quaschning</b:Last><b:First>V.</b:First></b:Person></b:NameList></b:Author></b:Author><b:Title>Regenerative Energiesysteme</b:Title><b:Year>2019</b:Year></b:Source></b:Sources>';
+    const body = [
+      heading(1, 'Inhalt'),
+      para(field('TOC \\o "1-3" \\h \\z \\u', 'Einleitung 1')),
+      heading(1, 'Einleitung'),
+      para(run('Wie gezeigt ') + field('CITATION Qua19 \\p 12 \\l 1031', '(Quaschning, 2019, S. 12)') + run('.')),
+      para(run('Tabelle ') + field('SEQ Tabelle \\* ARABIC', '1') + run(': Gemessene Leistung'), 'Caption'),
+      table([3000, 3000], [tableRow([cell(para(run('Temperatur'))), cell(para(run('Leistung')))]), tableRow([cell(para(run('25 °C'))), cell(para(run('300 W')))])]),
+      para(picture('lab', 4, 3)),
+      para(run('Tablets im Labor'), 'Caption'),
+      heading(1, 'Quellenverzeichnis'),
+      para(field('BIBLIOGRAPHY', 'Quaschning, V. (2019). Regenerative Energiesysteme.')),
+      heading(1, 'Anhang'),
+      para(run('Messprotokoll.')),
+    ].join('');
+    const result = await convert(body, { sources, lang: 'de-DE', media: { 'lab.png': TINY_PNG } });
+    const main = file(result, 'main.tex');
+    const text = allTex(result);
+    // "Tabelle", not "Tab" followed by "elle"; a caption that only starts like a label keeps its words.
+    expect(text).toContain('\\caption{Gemessene Leistung}\n\\begin{tabular}');
+    expect(text).toContain('\\caption{Tablets im Labor}');
+    // The bibliography stays where it was in Word, before the appendix, and is listed in the contents.
+    expect(main).toMatch(/\\include\{chapters\/01-einleitung\}\n\n\\nocite\{\*\}\n\\bibliographystyle\{plain\}\n\\clearpage\n\\phantomsection\n\\addcontentsline\{toc\}\{chapter\}\{\\bibname\}\n\\bibliography\{references\}\n\n\\include\{chapters\/02-anhang\}/);
+    // babel sets its own names when the document begins, so Word's are set after that.
+    expect(main).toContain('\\usepackage[ngerman]{babel}');
+    expect(main).toContain('\\AtBeginDocument{%\n  \\renewcommand{\\bibname}{Quellenverzeichnis}\n  \\renewcommand{\\contentsname}{Inhalt}\n}');
+  });
+
+  it('shows the fallback picture of content it cannot convert, such as a 3D model', async () => {
+    const drawing = picture('bird', 5, 5).replace(/^<w:r>|<\/w:r>$/g, '');
+    const model =
+      '<w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="am3d">' +
+      '<w:drawing><wp:inline><wp:extent cx="1800000" cy="1800000"/><wp:docPr id="2" name="3D Model"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2017/model3d"/></a:graphic></wp:inline></w:drawing>' +
+      `</mc:Choice><mc:Fallback>${drawing}</mc:Fallback></mc:AlternateContent></w:r>`;
+    const result = await convert(para(model), { media: { 'bird.png': TINY_PNG } });
+    expect(allTex(result)).toMatch(/\\includegraphics\[width=0\.31\\linewidth\]\{images\/[^}]+\.png\}/);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('uses the PNG that Word 365 keeps next to an SVG picture, without a warning', async () => {
+    const svg = picture('icon', 2, 2).replace(
+      '<a:blip r:embed="img-icon"/>',
+      '<a:blip r:embed="img-icon"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="img-icon-svg"/></a:ext></a:extLst></a:blip>',
+    );
+    const result = await convert(para(svg), { media: { 'icon.png': TINY_PNG, 'icon-svg.svg': strToU8('<svg xmlns="http://www.w3.org/2000/svg"/>') } });
+    expect(result.files.map((item) => item.path).filter((path) => path.startsWith('images/'))).toEqual([expect.stringMatching(/\.png$/)]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('reads parts that other programs write in UTF-16, or name with other case or %-encoding', async () => {
+    const files = unzipSync(buildDocx({ body: para(run('Grüße')) + para(picture('photo', 3, 3)), media: { 'my photo.png': TINY_PNG } }));
+    const utf16 = (text: string) => {
+      const out = new Uint8Array(2 + text.length * 2);
+      out.set([0xff, 0xfe]);
+      for (let k = 0; k < text.length; k++) out.set([text.charCodeAt(k) & 0xff, text.charCodeAt(k) >> 8], 2 + 2 * k);
+      return out;
+    };
+    files['word/document.xml'] = utf16(strFromU8(files['word/document.xml']!));
+    const rels = strFromU8(files['word/_rels/document.xml.rels']!).replace('Target="media/my photo.png"', 'Target="media/my%20photo.png"').replace('Id="img-my photo"', 'Id="img-photo"');
+    files['word/_rels/document.xml.rels'] = strToU8(rels);
+    files['word/Media/My Photo.PNG'] = files['word/media/my photo.png']!;
+    delete files['word/media/my photo.png'];
+    const result = await convertDocx(zipSync(files), { fileName: 'test.docx' });
+    expect(allTex(result)).toContain('Grüße');
+    expect(result.summary.images).toBe(1);
+  });
+
+  it('converts the rest of a file whose picture is damaged', async () => {
+    const files = unzipSync(buildDocx({ body: para(run('Still here.')) + para(picture('broken', 3, 3)), media: { 'broken.png': new Uint8Array(4000) } }));
+    const bytes = zipSync(files, { level: 6 });
+    // Make the picture's compressed data invalid: a deflate block of the reserved type.
+    const name = strToU8('word/media/broken.png');
+    for (let at = 0; at < bytes.length - 30; at++) {
+      if (bytes[at] !== 0x50 || bytes[at + 1] !== 0x4b || bytes[at + 2] !== 3 || bytes[at + 3] !== 4) continue;
+      const nameLength = bytes[at + 26]! | (bytes[at + 27]! << 8);
+      const extraLength = bytes[at + 28]! | (bytes[at + 29]! << 8);
+      if (strFromU8(bytes.subarray(at + 30, at + 30 + nameLength)) !== strFromU8(name)) continue;
+      bytes[at + 30 + nameLength + extraLength] = 0xff;
+    }
+    const result = await convertDocx(bytes, { fileName: 'test.docx' });
+    expect(allTex(result)).toContain('Still here.');
+    expect(result.warnings.join(' ')).toContain('could not be read (damaged)');
+  });
+
+  it('keeps a Title-styled paragraph after the first heading in its place', async () => {
+    const body = [para(run('My Thesis'), 'Title'), heading(1, 'Introduction'), para(run('Text.')), para(run('Appendix'), 'Title'), para(run('More.'))].join('');
+    const text = allTex(await convert(body));
+    expect(text).toContain('\\title{My Thesis}');
+    expect(text).toContain('Text.\n\n{\\LARGE\\bfseries Appendix\\par}\n\nMore.');
+  });
+
+  it('names the kind of file when it is not a Word document', async () => {
+    const odt = zipSync({ mimetype: strToU8('application/vnd.oasis.opendocument.text'), 'content.xml': strToU8('<office:document-content/>') });
+    await expect(convertDocx(odt, { fileName: 'thesis.docx' })).rejects.toThrow('This is an OpenDocument file (.odt)');
+    const workbook = zipSync({
+      '_rels/.rels': strToU8('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+      'xl/workbook.xml': strToU8('<workbook/>'),
+    });
+    await expect(convertDocx(workbook, { fileName: 'data.xlsx' })).rejects.toThrow('This is an Excel workbook');
+    const flat = strToU8('<?xml version="1.0"?><?mso-application progid="Word.Document"?><pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage"/>');
+    await expect(convertDocx(flat, { fileName: 'thesis.xml' })).rejects.toThrow('This is a Word XML file');
   });
 
   it('marks characters pdfLaTeX cannot print, and says so', async () => {
