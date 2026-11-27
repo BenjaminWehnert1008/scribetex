@@ -1,5 +1,5 @@
 name: Report a bug
-description: Something in scribeTex does not work as it should.
+description: Something in scribeTeX does not work as it should.
 labels: [bug]
 body:
   - type: textarea

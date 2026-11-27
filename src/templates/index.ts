@@ -1,14 +1,11 @@
 /** Starting points for a new project. All text here is written for this app. */
-import type { Path } from '../core/types';
+import { encodeText } from '../core/hash';
+import { cv } from './cv';
+import { proposal } from './proposal';
+import { thesis } from './thesis';
+import type { Template, TemplateFile } from './types';
 
-export interface Template {
-  id: string;
-  name: string;
-  description: string;
-  mainFile: Path | null;
-  files: { path: Path; text: string }[];
-  dirs?: Path[];
-}
+export type { Template, TemplateFile } from './types';
 
 const article = `\\documentclass[11pt,a4paper]{article}
 \\usepackage[utf8]{inputenc}
@@ -100,7 +97,26 @@ const slides = `\\documentclass{beamer}
 \\end{document}
 `;
 
+const blank: Template = {
+  id: 'blank',
+  name: 'Blank',
+  description: 'An empty document and an images folder',
+  mainFile: 'main.tex',
+  files: [
+    {
+      path: 'main.tex',
+      text: '\\documentclass[11pt,a4paper]{article}\n\\usepackage[T1]{fontenc}\n\\usepackage{lmodern}\n\\usepackage{graphicx}\n\\graphicspath{{images/}}\n\n\\begin{document}\n\n\\end{document}\n',
+    },
+  ],
+  dirs: ['images'],
+};
+
+/** In the order the new-project dialog shows them; the first is preselected. */
 export const TEMPLATES: Template[] = [
+  blank,
+  thesis,
+  proposal,
+  cv,
   {
     id: 'article',
     name: 'Article',
@@ -132,11 +148,9 @@ export const TEMPLATES: Template[] = [
     mainFile: 'main.tex',
     files: [{ path: 'main.tex', text: slides }],
   },
-  {
-    id: 'blank',
-    name: 'Blank',
-    description: 'An empty document',
-    mainFile: 'main.tex',
-    files: [{ path: 'main.tex', text: '\\documentclass{article}\n\n\\begin{document}\n\n\\end{document}\n' }],
-  },
 ];
+
+/** The bytes of a template file, as they are written into the new project. */
+export function templateFileBytes(file: TemplateFile): Uint8Array {
+  return 'text' in file ? encodeText(file.text) : file.bytes();
+}

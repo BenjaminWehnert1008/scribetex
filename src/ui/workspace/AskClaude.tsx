@@ -114,7 +114,7 @@ export function AskClaude(props: AskClaudeProps) {
   return (
     <Dialog title="Ask Claude" wide onClose={props.onClose}>
       <p className="muted">
-        This opens Claude with your question already written in. You send it there, with your own Claude plan. scribeTex itself sends nothing to Claude.
+        This opens Claude with your question already written in. You send it there, with your own Claude plan. scribeTeX itself sends nothing to Claude.
       </p>
       <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
         <label className="stack">
@@ -154,7 +154,7 @@ export function AskClaude(props: AskClaudeProps) {
             )}
             <p style={{ fontSize: 13.5 }}>
               {viaFolder
-                ? `Claude opens on this folder and can read and change the files. scribeTex picks up the changes within a few seconds${
+                ? `Claude opens on this folder and can read and change the files. scribeTeX picks up the changes within a few seconds${
                     model.state.get().project.autoCompile ? ' and compiles again.' : '. Press Compile to see them in the PDF.'
                   }`
                 : 'Without the path, Claude gets your question and the file you are looking at, but cannot change the files itself.'}

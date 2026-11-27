@@ -1,6 +1,6 @@
-# scribeTex
+# scribeTeX
 
-<img src="public/logo.svg" alt="scribeTex" width="340">
+<img src="public/logo.svg" alt="scribeTeX" width="340">
 
 A LaTeX editor that runs entirely in the browser: a file tree with real
 folders, an editor, and a PDF preview, compiled on your own computer by a
@@ -14,6 +14,10 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
 ## What it does
 
 - Projects with nested folders, drag and drop, upload of files and whole folders.
+- Starting points for a new project: Blank, Thesis, Project Proposal and CV,
+  each with lorem ipsum text and a folder layout (chapters or sections,
+  `images/`, `bibliography/`, settings), plus Article, Report and Slides. They
+  live in `src/templates/`; pictures in them are drawn in code.
 - An editor with LaTeX highlighting, completion of commands, environments,
   labels, citation keys and file names, an outline, and problems that jump to
   the right line of the right file.
@@ -66,17 +70,17 @@ project back on another computer.
 
 ## Ask Claude
 
-scribeTex has no assistant of its own and never talks to Claude itself. The
+scribeTeX has no assistant of its own and never talks to Claude itself. The
 **Ask Claude** button opens the Claude desktop app with a question already
 written in: the person's question, the problem with its file, line and log,
 and what the engine can and cannot do. The person sends it there, with their
 own Claude plan. (Other apps may not sign in with a Claude subscription, so a
-chat inside scribeTex would need a pay-per-use API key instead.)
+chat inside scribeTeX would need a pay-per-use API key instead.)
 
 - When the project is linked to a folder, the app opens on that folder
   (`claude://cowork/new?folder=…`), and Claude can read and change the files.
   Browsers do not reveal a folder's full path, so the person pastes it once per
-  project; it is kept in that browser only. scribeTex notices the changes in
+  project; it is kept in that browser only. scribeTeX notices the changes in
   the folder within a second (Chrome's `FileSystemObserver`; elsewhere at the
   next check, at most 20 s later), and compiles again when "Auto" is on.
 - Without a folder, the question includes the file being edited, around the
@@ -87,7 +91,7 @@ chat inside scribeTex would need a pay-per-use API key instead.)
 The links are described in
 [Open Claude Desktop with a link](https://support.claude.com/en/articles/14729294).
 The app fills in the message but does not send it, and keeps about 14,000
-characters, so scribeTex keeps questions under 12,000.
+characters, so scribeTeX keeps questions under 12,000.
 
 ## Limits
 
@@ -155,7 +159,7 @@ makes every compile fail.
 
 ## Contributing
 
-scribeTex is meant to be a community-driven tool. Please
+scribeTeX is meant to be a community-driven tool. Please
 [report a bug](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=bug.yml) or
 [suggest an improvement](https://github.com/BenjaminWehnert1008/scribetex/issues/new?template=idea.yml);
 pull requests are welcome too.

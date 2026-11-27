@@ -1,8 +1,8 @@
 /**
- * "Ask Claude": the question that scribeTex hands to Claude, and the links
+ * "Ask Claude": the question that scribeTeX hands to Claude, and the links
  * that open it.
  *
- * scribeTex never talks to Claude itself. It opens the Claude desktop app (or
+ * scribeTeX never talks to Claude itself. It opens the Claude desktop app (or
  * claude.ai) with the question filled in, and the person sends it there with
  * their own Claude plan. When the project is linked to a folder, the app is
  * opened on that folder, so Claude can read and change the files directly;
@@ -34,7 +34,7 @@ export interface AskInput {
 }
 
 const ENVIRONMENT =
-  'scribeTex compiles in the browser with pdfLaTeX and BibTeX (TeX Live 2026). It has no shell escape (so no minted or svg packages) and no biber (biblatex works with backend=bibtex). XeLaTeX and LuaLaTeX are not available.';
+  'scribeTeX compiles in the browser with pdfLaTeX and BibTeX (TeX Live 2026). It has no shell escape (so no minted or svg packages) and no biber (biblatex works with backend=bibtex). XeLaTeX and LuaLaTeX are not available.';
 
 function where(diagnostic: Diagnostic): string {
   if (!diagnostic.file) return '';
@@ -86,17 +86,17 @@ export function buildPrompt(input: AskInput): string {
   const question = input.question.trim();
   parts.push(question === '' ? 'Please help me with this LaTeX project.' : question);
 
-  const about = [`This is about my LaTeX project "${input.projectName}", written in scribeTex.`];
+  const about = [`This is about my LaTeX project "${input.projectName}", written in scribeTeX.`];
   if (input.mainFile) about.push(`The main file is ${input.mainFile}.`);
   about.push(ENVIRONMENT);
   if (input.viaFolder) {
     about.push(
-      'The folder you have open is this project. scribeTex keeps it in step with the editor, so please change the files in the folder directly; scribeTex picks the changes up. Please do not rename or move files unless I ask.',
+      'The folder you have open is this project. scribeTeX keeps it in step with the editor, so please change the files in the folder directly; scribeTeX picks the changes up. Please do not rename or move files unless I ask.',
     );
   }
   parts.push(about.join(' '));
 
-  if (input.problem) parts.push(`scribeTex reports this problem:\n${describeProblem(input.problem)}`);
+  if (input.problem) parts.push(`scribeTeX reports this problem:\n${describeProblem(input.problem)}`);
   const others = input.otherErrors.filter((diagnostic) => diagnostic !== input.problem).slice(0, 5);
   if (others.length > 0) {
     parts.push(`Other problems of the same compile:\n${others.map((diagnostic) => `- ${diagnostic.message}${where(diagnostic)}`).join('\n')}`);
