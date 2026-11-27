@@ -114,8 +114,10 @@ characters, so scribeTeX keeps questions under 12,000.
 - The first compile of a document takes a few seconds. From the third one on,
   the engine loads the preamble (everything before `\begin{document}`) from a
   copy it made in between and checked against a normal compile, so a change
-  in the body compiles in about half a second. After a change in the preamble
-  the next two compiles take the normal time again.
+  in the body compiles in about half a second. A change in the preamble makes
+  the next compile or two slower again; when the change is in the main file,
+  the next compile starts over like the first one, without the old `.aux`
+  files.
 - Jumping from the PDF lands on the line TeX was reading. For text set by
   a macro after the fact (a whole `align` block, a heading made by a class),
   that is the line where the environment or command ended. The table of
