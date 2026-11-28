@@ -139,6 +139,8 @@
 .pdf-page .textLayer .markedContent { display: contents; }
 .pdf-page .textLayer span[role='img'] { user-select: none; cursor: default; }
 .pdf-page .textLayer ::selection { background: color-mix(in srgb, var(--accent) 34%, transparent); color: transparent; }
+/* The page is white in dark mode too, where black and white's accent is near-white: use its light-mode black. */
+:root[data-accent='mono'] .pdf-page .textLayer ::selection { background: color-mix(in srgb, var(--accent-l) 34%, transparent); }
 .pdf-page .textLayer br::selection { background: transparent; }
 /* While selecting, this covers the gaps between lines, so the selection does not jump to the end of the page. */
 .pdf-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
@@ -187,7 +189,7 @@
   background: var(--rv); color: var(--paper-raised); font-weight: 600; line-height: 1; user-select: none;
 }
 .rv-status { flex: none; font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: var(--paper-sunk); color: var(--ink-soft); }
-.rv-status.accepted { background: var(--accent-soft); color: var(--accent); }
+.rv-status.accepted { background: var(--ok-soft); color: var(--ok); }
 .rv-status.rejected { background: var(--danger-soft); color: var(--danger); }
 .rv-diff { line-height: 1.55; overflow-wrap: anywhere; }
 .rv-diff.mono { font-size: 12.5px; }

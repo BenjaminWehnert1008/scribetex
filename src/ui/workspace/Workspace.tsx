@@ -606,7 +606,7 @@ export function Workspace(props: WorkspaceProps) {
           </>
         ) : (
           <>
-            <label className="hide-narrow muted" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>
+            <label className="auto-compile hide-narrow muted">
               <input
                 type="checkbox"
                 checked={state.project.autoCompile}

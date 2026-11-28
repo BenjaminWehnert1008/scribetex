@@ -108,8 +108,8 @@ describe('Menu', () => {
     expect(menu().style.top).toBe(`${670 - 4 - 150}px`);
   });
 
-  it('stays inside the window when it has nothing to open above', () => {
-    render(<Menu x={900} y={700} items={items} onClose={() => undefined} />);
-    expect([menu().style.left, menu().style.top]).toEqual([`${1000 - 200 - 4}px`, `${800 - 150 - 4}px`]);
+  it('stays inside the window when it fits neither below nor above', () => {
+    render(<Menu x={900} y={700} above={100} items={items} onClose={() => undefined} />);
+    expect([menu().style.left, menu().style.top]).toEqual([`${1000 - 200 - 4}px`, '4px']);
   });
 });

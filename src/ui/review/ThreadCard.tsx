@@ -44,7 +44,7 @@ export interface ThreadCardProps {
 export function ThreadCard(props: ThreadCardProps) {
   const { thread, review, me, isAuthor, canEdit } = props;
   const [reply, setReply] = useState('');
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; above: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const open = thread.status === 'open';
   const mine = me !== null && thread.author.id === me.id;
@@ -103,7 +103,7 @@ export function ThreadCard(props: ThreadCardProps) {
             aria-label="More actions"
             onClick={(event) => {
               const box = event.currentTarget.getBoundingClientRect();
-              setMenu({ x: box.right - 180, y: box.bottom + 4 });
+              setMenu({ x: box.right - 180, y: box.bottom + 4, above: box.top });
             }}
           >
             <Ellipsis size={15} />
@@ -208,6 +208,7 @@ export function ThreadCard(props: ThreadCardProps) {
         <Menu
           x={menu.x}
           y={menu.y}
+          above={menu.above}
           onClose={() => setMenu(null)}
           items={[
             ...(thread.at && !thread.at.deleted ? [{ label: 'Show in the source and the PDF', run: () => props.onOpen?.() }] : []),

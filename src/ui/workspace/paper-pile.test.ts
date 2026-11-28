@@ -65,7 +65,12 @@ describe('the paper pile scene', () => {
 
   it('keeps going for a long wait without growing out of the picture', () => {
     const scene = createScene(4);
-    run(scene, 300_000);
+    run(scene, 240_000);
+    // In the fifth minute it still types and the pile still grows (about 850 pixels of paper a minute).
+    const [fed, piled] = [scene.target, scene.piled];
+    run(scene, 60_000);
+    expect(scene.target - fed).toBeGreaterThan(500);
+    expect(scene.piled).toBeGreaterThan(piled);
     expect(scene.falling.length).toBeLessThan(5);
     expect(Math.min(...scene.surface)).toBeGreaterThanOrEqual(PILE_TOP);
     expect(typewriterIntact(renderScene(scene))).toBe(true);
