@@ -32,6 +32,13 @@ favicon are drawn by `scripts/make-logo.mjs` (`npm run logo`).
   or Ctrl+click (Cmd+click on a Mac), and the editor opens that file at that
   line with the word selected, also for files in subfolders. The target
   button above the PDF marks where the line under the cursor ended up.
+- **Import a Word file**: a `.docx` becomes a LaTeX project in the browser,
+  without uploading it. Headings become chapter or section files, pictures go
+  to `images/`, and tables, lists, footnotes, equations (Word's equation
+  editor), cross-references and citations (Word's own, Zotero, Mendeley,
+  EndNote) are converted, with references in `references.bib`. What could not
+  be converted is listed after the import and at the top of `main.tex`. The
+  converter is in `src/core/docx/`.
 - Saving that is built so that work is not lost. See the next section.
 - **Comments and suggestions**, on the source and on the PDF, for a
   supervisor who does not know LaTeX. See below.

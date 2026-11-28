@@ -353,3 +353,4 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 :root[data-accent='mono'] .pdf-mark { background: color-mix(in srgb, var(--accent-l) 28%, transparent); outline-color: color-mix(in srgb, var(--accent-l) 70%, transparent); }
 @keyframes pdf-mark { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .pdf-mark { animation-duration: 2.6s; animation-timing-function: steps(1, end); } }
+.import-warnings { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; }

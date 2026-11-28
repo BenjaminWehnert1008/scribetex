@@ -1,4 +1,4 @@
-import { Bug, Code, Ellipsis, FileArchive, FolderOpen, GitBranch, Lightbulb, MessageSquareText, Plus } from 'lucide-react';
+import { Bug, Code, Ellipsis, FileArchive, FileText, FolderOpen, GitBranch, Lightbulb, MessageSquareText, Plus } from 'lucide-react';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   APP_NAME,
@@ -10,6 +10,7 @@ import {
   NEW_IDEA_URL,
   REPO_URL,
 } from '@/app/brand';
+import { imageToPng } from '@/app/image-to-png';
 import { canPickFolder, pickFolder } from '@/app/pick-folder';
 import { describeMerge, openReviewFile } from '@/app/review-files';
 import { detectBrowser, notify, reportError, type Services } from '@/app/services';
@@ -26,6 +27,7 @@ import { AccentSwitch, ThemeSwitch } from '../common/ThemeSwitch';
 import { NewProjectDialog } from './NewProjectDialog';
 import { GitHubGuideDialog } from '../workspace/GitHubGuide';
 import { PixelLogo } from './PixelLogo';
+import { WordImportDialog, type WordImport } from './WordImportDialog';
 
 export function Home(props: { services: Services; onOpen: (id: ProjectId) => void }) {
   const { services } = props;
@@ -39,6 +41,8 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
   const [guide, setGuide] = useState(false);
   const [opening, setOpening] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
+  const wordInput = useRef<HTMLInputElement>(null);
+  const [wordImport, setWordImport] = useState<WordImport | null>(null);
   const reviewInput = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
   const now = useTick(30_000);
@@ -78,6 +82,24 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     props.onOpen(result.projectId);
   };
 
+  /** Turns a Word file into a new project, in this browser. */
+  const importWord = async (file: File): Promise<void> => {
+    const fileName = file.name;
+    setWordImport({ state: 'converting', fileName });
+    try {
+      // The converter is only downloaded when someone imports a Word file.
+      const { importDocxAsProject, MAX_DOCX_BYTES } = await import('@/core/docx/import');
+      if (file.size > MAX_DOCX_BYTES) throw new Error('This file is larger than 200 MB. Compress the pictures in Word (File > Compress Pictures) and try again.');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // Let the dialog paint before the conversion keeps the page busy.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const { projectId, result } = await importDocxAsProject(services.vault, bytes, { fileName, toPng: imageToPng });
+      setWordImport({ state: 'done', fileName, projectId, result });
+    } catch (error) {
+      setWordImport({ state: 'failed', fileName, message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
   /** A review copy from a colleague becomes a project to comment on; comments sent back go into their project. */
   const openReview = async (file: File): Promise<void> => {
     const opened = await openReviewFile(services, new Uint8Array(await file.arrayBuffer()));
@@ -89,7 +111,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     props.onOpen(opened.projectId);
   };
 
-  /** Files dropped anywhere on the page: a review file or a ZIP. */
+  /** Files dropped anywhere on the page: a review file, a ZIP or a Word file. */
   const onDrop = (event: DragEvent): void => {
     if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
@@ -98,7 +120,9 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
     if (!file) return;
     if (isReviewFileName(file.name)) openReview(file).catch((error: unknown) => reportError(error, 'The review file could not be opened'));
     else if (/\.zip$/i.test(file.name)) importZip(file).catch((error: unknown) => reportError(error, 'The ZIP could not be imported'));
-    else notify(`Drop a review file (${REVIEW_EXTENSION}) or a ZIP here.`);
+    // importWord shows its own dialog, also for an old .doc file, and does not throw.
+    else if (/\.docx?$/i.test(file.name)) void importWord(file);
+    else notify(`Drop a review file (${REVIEW_EXTENSION}), a ZIP or a Word file here.`);
   };
 
   /** Opens a folder from disk as a project. The folder stays the place where its files live. */
@@ -173,6 +197,13 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           <button className="btn" onClick={() => zipInput.current?.click()}>
             <FileArchive size={15} /> Import a ZIP
           </button>
+          <button
+            className="btn"
+            title="Turn a Word document (.docx) into a LaTeX project. It is converted in this browser and not uploaded."
+            onClick={() => wordInput.current?.click()}
+          >
+            <FileText size={15} /> Import a Word file
+          </button>
           <button className="btn" onClick={() => setRestoring(true)}>
             <GitBranch size={15} /> Restore from GitHub
           </button>
@@ -201,6 +232,18 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
               if (file) importZip(file).catch((error: unknown) => reportError(error, 'The ZIP could not be imported'));
             }}
           />
+          <input
+            ref={wordInput}
+            type="file"
+            aria-label="Word file to import"
+            accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) void importWord(file);
+            }}
+          />
         </div>
 
         {projects !== null && projects.length === 0 && (
@@ -208,7 +251,7 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
             <p>
               <b>No projects yet.</b>
             </p>
-            <p style={{ marginTop: 4 }}>Create one from a template, or import a ZIP from Overleaf or another editor.</p>
+            <p style={{ marginTop: 4 }}>Create one from a template, import a ZIP from Overleaf or another editor, or turn a Word file into a LaTeX project.</p>
           </div>
         )}
 
@@ -299,6 +342,16 @@ export function Home(props: { services: Services; onOpen: (id: ProjectId) => voi
           onClose={() => setRestoring(false)}
           onRestored={(id) => {
             setRestoring(false);
+            props.onOpen(id);
+          }}
+        />
+      )}
+      {wordImport && (
+        <WordImportDialog
+          job={wordImport}
+          onClose={() => setWordImport(null)}
+          onOpen={(id) => {
+            setWordImport(null);
             props.onOpen(id);
           }}
         />
