@@ -125,19 +125,22 @@ export class DocPersistence {
   readonly #name: DocName;
   readonly #doc: Y.Doc;
   readonly #delayMs: number;
+  readonly #retryMs: number;
   readonly #off: () => void;
   #pending: Uint8Array[] = [];
   #timer: ReturnType<typeof setTimeout> | null = null;
   #writing: Promise<void> = Promise.resolve();
+  #disposed = false;
   /** False in a tab that only reads the project, so two tabs never both write a document. */
   enabled = true;
 
-  constructor(storage: ReviewStorage, projectId: ProjectId, name: DocName, doc: Y.Doc, options: { delayMs?: number } = {}) {
+  constructor(storage: ReviewStorage, projectId: ProjectId, name: DocName, doc: Y.Doc, options: { delayMs?: number; retryMs?: number } = {}) {
     this.#storage = storage;
     this.#projectId = projectId;
     this.#name = name;
     this.#doc = doc;
     this.#delayMs = options.delayMs ?? 0;
+    this.#retryMs = options.retryMs ?? 2000;
     const onUpdate = (update: Uint8Array, origin: unknown): void => {
       if (origin === LOAD || !this.enabled) return;
       this.#pending.push(update);
@@ -161,19 +164,37 @@ export class DocPersistence {
     if (this.#pending.length === 0) return this.#writing;
     const batch = this.#pending.length === 1 ? this.#pending[0]! : Y.mergeUpdates(this.#pending);
     this.#pending = [];
-    this.#writing = this.#writing.then(() => this.#storage.append(this.#projectId, this.#name, batch)).catch(() => undefined);
+    this.#writing = this.#writing
+      .then(() => this.#storage.append(this.#projectId, this.#name, batch))
+      .catch((error: unknown) => {
+        // Nothing is dropped: the batch goes along with the next write, and later
+        // updates, which may build on it, never end up stored without it.
+        console.warn('Comments could not be stored; trying again.', error);
+        this.#pending.unshift(batch);
+        if (!this.#disposed) this.#timer ??= setTimeout(() => void this.flush(), this.#retryMs);
+      });
     return this.#writing;
   }
 
-  /** Stores the whole document as one record, replacing what was there. */
+  /** Stores the whole document as one record, replacing what was there. Not in a tab that only reads. */
   async rewrite(): Promise<void> {
+    if (!this.enabled) return;
     this.#pending = [];
     await this.#writing;
     await this.#storage.replace(this.#projectId, this.#name, Y.encodeStateAsUpdate(this.#doc));
   }
 
+  /** Adds the whole document to what is stored, also in a tab that only reads. */
+  async storeAll(): Promise<void> {
+    await this.#writing;
+    await this.#storage.append(this.#projectId, this.#name, Y.encodeStateAsUpdate(this.#doc));
+  }
+
   async dispose(): Promise<void> {
     await this.flush();
+    this.#disposed = true;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = null;
     this.#off();
   }
 }

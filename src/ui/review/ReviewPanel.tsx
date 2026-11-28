@@ -94,7 +94,7 @@ export function ReviewPanel(props: { model: WorkspaceModel; services: Services; 
     card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [state.selected]);
 
-  const suggestionsReady = open.filter((thread) => thread.kind === 'suggestion' && thread.replacement !== null && thread.at && !thread.at.deleted && !thread.changed).length;
+  const suggestionsReady = open.filter((thread) => thread.kind === 'suggestion' && thread.replacement !== null && thread.at && !thread.at.deleted && !thread.changed && !thread.gone).length;
 
   return (
     <>
@@ -156,7 +156,11 @@ export function ReviewPanel(props: { model: WorkspaceModel; services: Services; 
                 ui.withName(() => {
                   model.review
                     .acceptAll()
-                    .then((count) => notify(count === 1 ? '1 suggestion accepted.' : `${count} suggestions accepted.`))
+                    .then(({ accepted, skipped }) => {
+                      const done = accepted === 1 ? '1 suggestion accepted.' : `${accepted} suggestions accepted.`;
+                      const left = skipped === 1 ? ' 1 is still open: its words were changed by another one.' : skipped > 1 ? ` ${skipped} are still open: their words were changed by others.` : '';
+                      notify(done + left);
+                    })
                     .catch((error: unknown) => reportError(error));
                 })
               }

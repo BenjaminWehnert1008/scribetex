@@ -34,6 +34,10 @@ async function openCopy(services: Services, copy: ReviewCopy): Promise<OpenedRev
 
   let project: ProjectMeta;
   if (existing?.reviewCopy) {
+    if (manifest.createdAt < existing.reviewCopy.sentAt) {
+      const when = new Date(existing.reviewCopy.sentAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      throw new ReviewFileError(`This is an older review copy of "${manifest.project}". The newer one, sent ${when}, is already open here, so this one was left as it is.`);
+    }
     project = existing;
   } else {
     project = await vault.createProject({ name: `${manifest.project} (review)`, mainFile: manifest.mainFile });

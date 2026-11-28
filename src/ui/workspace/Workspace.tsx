@@ -518,6 +518,13 @@ export function Workspace(props: WorkspaceProps) {
   return (
     <div
       className="ws"
+      onDragOver={(event) => {
+        // Files may be dropped anywhere, also on the PDF; a review file is read, and nothing else opens in place of the app.
+        if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+      }}
       onDropCapture={(event) => {
         // A review file dropped anywhere is read as one, not added to the project's files.
         const files = [...(event.dataTransfer?.files ?? [])];

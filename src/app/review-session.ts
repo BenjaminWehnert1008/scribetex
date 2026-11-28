@@ -10,7 +10,6 @@
  * review copy. Until then nothing of this runs, so projects without comments
  * work exactly as before.
  */
-import * as Y from 'yjs';
 import { isBuildArtifact } from '@/core/latex/deps';
 import { type SourceRange, SourceMirror } from '@/core/review/mirror';
 import { type CommentsFile, REVIEW_EXTENSION, type ReviewCopy, writeComments, writeReviewCopy } from '@/core/review/package';
@@ -220,31 +219,82 @@ export class ReviewSession {
     this.#doc.remove(id);
   }
 
-  /** Makes the suggested change in the source and marks the suggestion accepted. */
-  async accept(id: string): Promise<void> {
+  /**
+   * Makes the suggested change in the source and marks the suggestion
+   * accepted, together with the same suggestion made by someone else. When
+   * the text under it changed or was deleted since, only with `anyway`.
+   */
+  async accept(id: string, options: { anyway?: boolean } = {}): Promise<void> {
     const me = this.#requireMe();
     this.#resolveNow();
+    const before = this.thread(id);
+    if (before?.at && !before.at.deleted) await this.#catchUp(before.at.path);
     const thread = this.thread(id);
     if (!thread || thread.kind !== 'suggestion' || thread.replacement === null) throw new Error('This suggestion cannot be applied by itself.');
+    if (thread.status !== 'open') return;
     if (!thread.at || thread.at.deleted) throw new Error('The text this suggestion is about is no longer in the project.');
+    if ((thread.changed || thread.gone) && !options.anyway) {
+      throw new Error('The text under this suggestion changed since it was made. Look at it again, and choose "Accept anyway" if it still fits.');
+    }
+    const twins = this.#twins(thread);
     await this.#host.applyEdit(thread.at.path, { from: thread.at.from, to: thread.at.to, insert: thread.replacement });
-    this.#doc.setStatus(id, 'accepted', me);
+    this.#doc.doc.transact(() => {
+      for (const done of [thread, ...twins]) this.#doc.setStatus(done.id, 'accepted', me);
+    });
+    this.#resolveNow();
   }
 
-  /** Accepts every open suggestion that can be applied. Returns how many were. */
-  async acceptAll(): Promise<number> {
+  /**
+   * Accepts every open suggestion whose text is still as it was. Suggestions
+   * on words that an earlier one in the same run changed are left open.
+   */
+  async acceptAll(): Promise<{ accepted: number; skipped: number }> {
+    this.#requireMe();
     this.#resolveNow();
-    const ready = this.state
-      .get()
-      .threads.filter((thread) => thread.kind === 'suggestion' && thread.status === 'open' && thread.replacement !== null && thread.at && !thread.at.deleted && !thread.changed)
+    const open = (): ResolvedThread[] => this.state.get().threads.filter((thread) => thread.kind === 'suggestion' && thread.status === 'open' && thread.replacement !== null && thread.at !== null && !thread.at.deleted);
+    for (const path of new Set(open().map((thread) => thread.at!.path))) await this.#catchUp(path);
+    const ready = open()
+      .filter((thread) => !thread.changed && !thread.gone)
       // From the end of each file backwards, so earlier positions stay right.
       .sort((a, b) => (a.at!.path === b.at!.path ? b.at!.from - a.at!.from : a.at!.path.localeCompare(b.at!.path)));
-    let count = 0;
-    for (const thread of ready) {
+    for (const candidate of ready) {
+      // Positions are worked out again before each one: the ones before may have changed its words.
+      this.#resolveNow();
+      const thread = this.thread(candidate.id);
+      if (!thread || thread.status !== 'open' || !thread.at || thread.at.deleted || thread.changed || thread.gone) continue;
       await this.accept(thread.id);
-      count++;
     }
-    return count;
+    const accepted = ready.filter((thread) => this.thread(thread.id)?.status === 'accepted').length;
+    return { accepted, skipped: ready.length - accepted };
+  }
+
+  /** Other open suggestions that make exactly the same change. */
+  #twins(thread: ResolvedThread): ResolvedThread[] {
+    const at = thread.at!;
+    return this.state
+      .get()
+      .threads.filter(
+        (other) =>
+          other.id !== thread.id &&
+          other.kind === 'suggestion' &&
+          other.status === 'open' &&
+          other.replacement === thread.replacement &&
+          other.at !== null &&
+          other.at.fileId === at.fileId &&
+          other.at.from === at.from &&
+          other.at.to === at.to &&
+          !other.changed &&
+          !other.gone,
+      );
+  }
+
+  /** Makes sure the mirror holds what the editor has for `path`, in case a change reached the file some other way. */
+  async #catchUp(path: Path): Promise<void> {
+    if (this.#tracking()) {
+      const text = await this.#host.readText(path).catch(() => null);
+      if (text !== null && this.#mirror.text(path) !== text) this.#mirror.setText(path, text);
+    }
+    this.#resolveNow();
   }
 
   // ---- review files ----------------------------------------------------------------
@@ -323,23 +373,23 @@ export class ReviewSession {
     return summary;
   }
 
-  /** Brings a reviewer's copy up to a newer version that its author sent. */
-  async updateCopy(mirror: Uint8Array, review: Uint8Array): Promise<void> {
-    Y.applyUpdate(this.#mirror.doc, mirror, 'file');
-    this.#doc.merge(review);
-    await this.#mirrorStore.rewrite();
-    this.state.patch({ active: true });
-    this.#resolveNow();
-  }
-
   // ---- keeping the mirror in step -------------------------------------------------------
 
-  /** Switches review on: the mirror starts from the files as they are now. */
+  /**
+   * Switches review on: the mirror starts from the files as they are now.
+   * Another tab of the project may have switched it on since this one
+   * opened, so what is stored comes first; a tab that cannot change the
+   * project builds on it and never replaces it.
+   */
   async activate(): Promise<void> {
     if (this.state.get().active) return;
-    this.#mirror.reconcile(await this.#textFiles());
+    const stored = await this.#mirrorStore.load();
+    const writer = this.state.get().role === 'author' && this.#host.canWrite();
+    if (writer || !stored) this.#mirror.reconcile(await this.#textFiles());
     this.state.patch({ active: true });
-    await this.#mirrorStore.rewrite();
+    if (writer) await this.#mirrorStore.rewrite();
+    // Kept even here, so comments made in this tab keep their place; the editing tab builds on it.
+    else if (!stored && this.state.get().role === 'author') await this.#mirrorStore.storeAll();
     this.#resolveNow();
   }
 
