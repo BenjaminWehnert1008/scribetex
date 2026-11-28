@@ -189,6 +189,20 @@ test('types on a typewriter while the first PDF is being prepared', async ({ pag
   await expect.poll(() => typewriter.innerHTML()).not.toBe(before);
 });
 
+test('keeps Compile and More on the top bar of a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await createProject(page, 'Phone', 'Blank');
+  // The save chip shows only its dot there; its text is still its name.
+  await expect(page.locator('.save-chip')).toHaveAccessibleName('Saved in this browser only');
+  const more = page.getByRole('button', { name: 'More' });
+  const box = (await more.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await expect(page.getByRole('button', { name: /^(Compile|Stop)$/ })).toBeInViewport({ ratio: 1 });
+  await more.click();
+  await expect(page.getByRole('menuitem', { name: 'Project settings' })).toBeVisible();
+});
+
 test('keeps nested folders and text across a reload', async ({ page }) => {
   await start(page);
   await createProject(page, 'Nested', 'Report');

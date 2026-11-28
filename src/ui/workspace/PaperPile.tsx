@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PixelPaths, pixelPaths, reducedMotion } from '../common/pixel-art';
 import { advance, createScene, renderScene, SCENE_HEIGHT, SCENE_WIDTH } from './paper-pile';
 
@@ -23,6 +23,7 @@ function stillPicture(): string[] {
 export function PaperPile() {
   const [still] = useState(reducedMotion);
   const [rows, setRows] = useState(() => (still ? stillPicture() : renderScene(createScene(0))));
+  const svg = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     if (still) return;
@@ -40,12 +41,30 @@ export function PaperPile() {
       }
       frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    const start = (): void => {
+      if (frame !== 0) return;
+      last = null;
+      frame = requestAnimationFrame(tick);
+    };
+    const stop = (): void => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
+    // On a narrow screen the PDF pane is often hidden behind another tab: then
+    // the typewriter pauses instead of drawing 30 pictures a second for nobody.
+    // The last entry is the newest, when it was hidden and shown in quick succession.
+    const observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => (entries[entries.length - 1].isIntersecting ? start() : stop())) : null;
+    if (svg.current) observer?.observe(svg.current);
+    start();
+    return () => {
+      observer?.disconnect();
+      stop();
+    };
   }, [still]);
 
   return (
     <svg
+      ref={svg}
       className="paper-pile"
       viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`}
       width={SCENE_WIDTH * SCALE}

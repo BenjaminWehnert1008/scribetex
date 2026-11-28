@@ -189,6 +189,8 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 }
 .topbar .title:hover { background: var(--paper-hover); }
 .topbar .spacer { flex: 1; }
+/* In a class, not inline, so that .hide-narrow can hide it on narrow screens. */
+.auto-compile { display: flex; gap: 6px; align-items: center; font-size: 12.5px; }
 .save-chip {
   display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: 14px;
   border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; cursor: pointer; white-space: nowrap;
@@ -298,7 +300,7 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
 .pdf-page canvas { display: block; width: 100%; height: 100%; }
 .pdf-empty { height: 100%; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--ink-soft); }
 /* The typewriter that types while the first PDF is made (PaperPile.tsx). */
-.paper-pile { display: block; margin: 0 auto 18px; max-width: 100%; height: auto; }
+.paper-pile { display: block; margin: 0 auto 18px; max-width: 100%; height: auto; overflow: visible; }
 .pdf-stale { position: absolute; top: 44px; right: 14px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 12px; z-index: 3; }
 /* A page that could not be drawn (BrowserAdvice.tsx). */
 .pdf-trouble {
@@ -336,6 +338,14 @@ label.stack { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); 
   .ws-body > .side, .ws-body > .right { flex: 1; width: auto !important; border: 0; }
   .ws-body > .gutter { display: none; }
   .topbar .hide-narrow { display: none; }
+  /* The save chip's text gives way first (with an ellipsis), so that the buttons on the right stay on a phone's screen. */
+  .topbar .save-chip { min-width: 0; flex-shrink: 4; }
+  .topbar .save-chip > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}
+/* On a phone the save chip shows only its dot; the text stays for screen readers, and the panel it opens explains it. */
+@media (max-width: 480px) {
+  .topbar .save-chip { position: relative; }
+  .topbar .save-chip > span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
 /* Small additions */

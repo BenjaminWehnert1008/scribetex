@@ -23,11 +23,18 @@ describe('PaperPile', () => {
     document.body.innerHTML = '';
   });
 
-  it('animates the typewriter and stops when it goes away', () => {
+  /** Frames are run by hand; each request gets a new id, like in a browser. */
+  function stubFrames() {
     const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+    let id = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => (frames.push(callback), ++id));
     const cancel = vi.fn();
     vi.stubGlobal('cancelAnimationFrame', cancel);
+    return { frames, cancel, last: () => id };
+  }
+
+  it('animates the typewriter and stops when it goes away', () => {
+    const { frames, cancel, last } = stubFrames();
     const { svg, unmount } = mount();
     expect(svg.getAttribute('aria-hidden')).toBe('true');
     const before = colours(svg);
@@ -36,7 +43,35 @@ describe('PaperPile', () => {
     for (let time = 0; time < 4000; time += 16) act(() => frames.shift()!(time));
     expect(colours(svg)).toBeGreaterThan(before);
     unmount();
-    expect(cancel).toHaveBeenCalled();
+    // The frame asked for last is the one cancelled, so the loop really ends.
+    expect(cancel).toHaveBeenLastCalledWith(last());
+  });
+
+  it('pauses while it is out of sight and goes on when it is shown again', () => {
+    const { frames, cancel, last } = stubFrames();
+    let report: (visible: boolean) => void = () => undefined;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          report = (visible) => callback([{ isIntersecting: visible }]);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    const { svg } = mount();
+    for (let time = 0; time < 2000; time += 16) act(() => frames.shift()!(time));
+    // Hidden, for example behind the Source tab on a phone: no more frames.
+    act(() => report(false));
+    expect(cancel).toHaveBeenLastCalledWith(last());
+    frames.length = 0;
+    const hidden = svg.innerHTML;
+    // Shown again: it carries on from where it was.
+    act(() => report(true));
+    expect(frames).toHaveLength(1);
+    for (let time = 9000; time < 9500; time += 16) act(() => frames.shift()!(time));
+    expect(svg.innerHTML).not.toBe(hidden);
   });
 
   it('shows a still picture of a pile with reduced motion', () => {
